@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.CompanyName}}</title>
+
+  <!--favicon-->
+  <link rel="icon" type="image/png" href="/api/favicon.ico">
+
+  <!-- Font de Google -->
+  <link href="https://fonts.googleapis.com/css?family=Roboto&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.7.2/animate.min.css">
+
+  <!--font awesone-->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css"
+    integrity="sha384-B4dIYHKNBt8Bc12p+WXckhzcICo0wtJAoU8YZTY5qE0Id1GSseTk6S+L3BlXeVIU" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.1/js/all.min.js">
+
+  <!-- Bootstrap-->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
+    integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+
+  <!--Off-Canvas -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/uikit/2.xx.x/css/uikit.min.css" />
+
+  <!-- Animate -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.7.2/animate.min.css">
+
+  <!--Personalizacion -->
+  <link href='/api/styles.css' rel='stylesheet'>
+</head>
+
+<body>
+  <main>
+      <!--Menu  pagado Navegacion -->
+      <div class="container">
+        <div class="row fixed-top">
+          <nav class="navbar navbar-inverse navbar-expand-sm navbar-expand-md navbar-expand-lg navbar-light bg-light">
+            <li class="dropdown">
+              <a href="/pelis?id=100" class="navbar-brand dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
+                <i class="fas fa-align-justify"></i>
+                <span class="caret ">{{.CompanyName}}</span>  
+                
+              </a>
+              <ul class="dropdown-menu bg-transparente">
+                <!--https://fontawesome.com/v4.7.0/cheatsheet/-->
+                <li><a data-scroll href="/pelis?id=100"><p class="texto-blanco"></i>ONLINE</p></a></li>
+                <li><a data-scroll href="/pelis?id=1"><p class="texto-blanco">NOTICIAS</p></a></li>
+                <li><a data-scroll href="/pelis?id=0"><p class="texto-blanco">NOVEDAD</p></a></li>
+                <li><a data-scroll href="#dispositivos"><p class="texto-blanco">DISPOSITIVOS</p></a></li>
+                <li><a data-scroll href="#descargas"><p class="texto-blanco">DESCARGAS</p></a></li>
+                <li><a data-scroll href="#streaming"><p class="texto-blanco">STREAMING</p></a></li> 
+                <li><a data-scroll href="#sinsuscriptcion"><p class="texto-blanco">SIN SUSCRIPCIÓN</p></a></li> 
+                <li><a data-scroll href="/api/cookies.html"><p class="texto-blanco">COOKIES</p></a></li>
+                <li><a data-scroll href="/api/privacidad.html"><p class="texto-blanco">PRIVACIDAD</p></a></li>
+                <li><a data-scroll href="/api/avisolegal.html"><p class="texto-blanco">AVISO LEGAL</p></a></li>
+              </ul>
+            </li>
+          </nav>
+        </div>  
+ <!--fin de menu-->
+           
+</div>
+  
+
+<!--TODO: añado loop 17/04/2020 12:06 -->
+<div class="container-fluid altura">
+  <div class="row">
+    <div class="col-9">
+
+  <video id="video" controls loop preload="true" poster='{{.Nfoto}}' autoplay="true" id='myVideo'></video>
+</div>
+  
+<!-- TODO: mogollon-->  
+
+    <div class="col-3 d-none d-lg-block">
+      <!--Alertas   <i class="fa fa-camera-retro"></i> fa-camera-retro  -->
+      <div class="alert texto-blanco alert-dismissible bg-transparente">
+        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+        <strong>Está viendo: {{.Npeli}}</strong> Comenzó {{.Dhora}}
+            <!-- dia noche -->
+          <button class="switch" id="switch">
+          <span> <i class="fas fa-sun"></i> </span>
+          <span> <i class="fas fa-moon"></i> </span>
+          </button>
+            <!--fin dia noche-->
+        {{.Npeli}}.
+        <img src="{{.Nfoto}}" alt="{{.Npeli}}">
+      </div>
+      
+      <div class="alert texto-blanco alert-dismissible bg-transparente">
+        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+        <strong>Sinopsis: {{.Npeli}}.</strong>
+        {{.Texto}}
+        Estamos en pruebas de emisiones se realizan de manera regular.
+      </div>
+      <!--fin de alertas-->
+    </div>
+    
+  </div>
+</div>
+
+      <!--botones de video-->
+<div class="content altura" id="reloj">
+  <!--movimiento animación-->
+  <h1 class="animated bounce delay-2s junbotron" id="logo">{{.CompanyName}}</h1>
+  <p id="carga" ><i class="fa fa-cog fa-spin fa-1x fa-fw "></i>Email: victor.arbiol@gmail.com.</p>
+</div>
+<!--fin botones de video-->
+
+
+
+<section>
+  <hr class="my-4 altura" id="streaming">
+  <div class="row altura">
+    <div class="col-9 lead" >
+      <strong class="display-4"><p>Disfruta en todas partes.</p></strong> 
+      <p class="text-center">Reproduce en streaming todas las películas y series en tu móvil, tableta, ordenador y TV sin pagar más.</p>
+    </div>
+    <div class="col-sm-12 col-md-6 col-lg-3 col-xl-3  bg-transparente"> 
+      <img src="{{.Nfoto}}" alt="imagen"></div>
+  </div>
+</section>
+
+  <section>
+    <hr class="my-4 altura" id="descargas">
+  <div class="row altura" id="descargas">
+    <div class="col-sm-12 col-md-6 col-lg-3 col-xl-3  lead bg-transparente">
+      <img src="{{.Nfoto}}" alt="imagen">
+    </div>
+    <div class="col-9 lead text-center" >
+    <strong class="display-4"><p>Descarga tus series para verlas en cualquier parte.</p></strong> 
+      <p>Libérate. Disfruta de todas tus series favoritas sin conexión.  </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <hr class="my-4 altura" id="streaming">
+  <div class="row altura">
+    <div class="col-9 lead" >
+      <strong class="display-4"><p>Disfruta en todas partes.</p></strong> 
+      <p class="text-center">Reproduce en streaming todas las películas y series en tu móvil, tableta, ordenador y TV sin pagar más.</p>
+    </div>
+    <div class="col-sm-12 col-md-6 col-lg-3 col-xl-3  bg-transparente"> 
+      <img src="{{.Nfoto}}" alt="imagen"></div>
+  </div>
+</section>
+  
+<section>  
+<hr class="my-4 altura" id="sinsuscriptcion">
+  <div class="row altura">
+    <div class="col-sm-12 col-md-6 col-lg-3 col-xl-3 lead bg-transparente">
+      <img src="{{.Nfoto}}" alt="imagen">
+    </div>
+    <div class="col-9 lead text-center" >
+    <strong class="display-4"><p>Empieza ya a disfrutar, no se requiere suscripción.</p></strong> 
+      <p>Ya puedes ver noticias, documentales, opinión, peliculas y series.     </p>
+    </div>
+  </div>
+</div>
+  <hr class="my-4 altura">
+</section>
+
+
+
+</main>
+ 
+  <!-- Fin de HTML -->
+
+  <!--pie de pagina-->
+  <div class="container-fluid altura">
+    <div class="row">
+      <div class="col-12">
+        <div class="text-center text-light bg-dark" id="footer">
+          <!--redes sociales-->
+          <p><a href="#">
+            
+          </a></p>
+  <!--fin redes sociales-->
+          {{ .CompanyName }} &copy;2020, Autor: Victor Manuel Arbiol Martinez 
+          <a href="https://creativecommons.org/licenses/by-nc-nd/2.0/deed.es" target="_blank">v1.1.2 Licencia: CC BY-NC-ND 3.0</a>
+        </div>
+      </div>
+    </div>
+  </div>  
+  <!--Cargamos otros Modulos-->
+  <script src="/api/main.js"></script>
+  <!-- off-canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/uikit/2.xx.x/js/uikit.min.js"></script>
+  
+  <!-- Font Awesome JS -->
+  <script defer src="https://use.fontawesome.com/releases/v5.0.13/js/solid.js"
+    integrity="sha384-tzzSw1/Vo+0N5UhStP3bvwWPq+uvzCMfrN1fEFe+xBmv1C/AtVX5K0uZtmcHitFZ" crossorigin="anonymous">
+  </script>
+
+  <script defer src="https://use.fontawesome.com/releases/v5.0.13/js/fontawesome.js"
+    integrity="sha384-6OIrr52G08NpOFSZdxxz1xdNSndlD4vdcf/q2myIUVO0VsqaGHJsB0RaBE01VTOY" crossorigin="anonymous">
+  </script>
+
+
+  <!--jquery-->
+  <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js"
+    integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous">
+  </script>
+  
+  <!--popper-->
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+    integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous">
+  </script>
+  
+  <!--bootstrap-->
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"
+    integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous">
+  </script>
+
+
+  <!-- Cargamos Modulos HLS -->
+
+  <script src="https://unpkg.com/ipfs/dist/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ipfs/dist/index.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/ipfs/dist/index.min.js"> </script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hlsjs-ipfs-loader@0.1.2"> </script>
+  <script src="https://cdn.jsdelivr.net/npm/hlsjs-ipfs-loader@latest/dist/index.js"></script>
+  
+  <!-- Protocolo HLS   -->
+
+  <script>
+    (async () => {
+      if (window.ipfs === undefined) {
+        const repoPath = 'ipfs-' + Math.random()
+        const node = await Ipfs.create({
+          repo: repoPath
+        })
+        handleInit(node)
+      } else {
+        window.ipfs.enable().then(handleInit)
+      }
+
+      function handleInit(node) {
+        const testhash = "{{ .Nurl }}";
+        Hls.DefaultConfig.loader = HlsjsIpfsLoader;
+        Hls.DefaultConfig.debug = false;
+        if (Hls.isSupported()) {
+          const video = document.getElementById('video');
+          const hls = new Hls();
+          hls.config.ipfs = node;
+          hls.config.ipfsHash = testhash;
+          hls.loadSource('master.m3u8');
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            video.play();
+          });
+        }
+      }
+    })()
+  </script>
+  <!-- Fin de Script -->
+</body>
+
+</html>
