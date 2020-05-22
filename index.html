@@ -30,6 +30,9 @@
 
   <!--Personalizacion -->
   <link href='/api/styles.css' rel='stylesheet'>
+  <!-- redes sociales -->
+  <link href='/api/bootstrap-social.css' rel='stylesheet'>
+
 </head>
 
 <body>
@@ -65,17 +68,17 @@
 </div>
   
 
-<!--TODO: añado loop 17/04/2020 12:06 -->
+<!--TODO: 9 añado loop 17/04/2020 12:06 -->
 <div class="container-fluid altura">
   <div class="row">
-    <div class="col-9">
+    <div class="col-12">
 
-  <video id="video" controls loop preload="true" poster='{{.Nfoto}}' autoplay="true" id='myVideo'></video>
+  <video id='video myVideo' controls loop preload='true' poster='{{.Nfoto}}' autoplay='true'></video>
 </div>
   
 <!-- TODO: mogollon-->  
 
-    <div class="col-3 d-none d-lg-block">
+    <div class="col-6 d-none d-lg-block">
       <!--Alertas   <i class="fa fa-camera-retro"></i> fa-camera-retro  -->
       <div class="alert texto-blanco alert-dismissible bg-transparente">
         <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
@@ -89,18 +92,36 @@
         {{.Npeli}}.
         <img src="{{.Nfoto}}" alt="{{.Npeli}}">
       </div>
-      
+
+    
       <div class="alert texto-blanco alert-dismissible bg-transparente">
         <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
         <strong>Sinopsis: {{.Npeli}}.</strong>
         {{.Texto}}
         Estamos en pruebas de emisiones se realizan de manera regular.
-      </div>
+      </div>   
       <!--fin de alertas-->
     </div>
     
+<!--seguda columna-->
+<div class="col-6 d-none d-lg-block">
+      <!--Alertas   <i class="fa fa-camera-retro"></i> fa-camera-retro  -->
+      <div class="alert texto-blanco alert-dismissible bg-transparente">
+        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+        <strong>Actores: {{.Npeli}}</strong> 
+        <img src="{{.Nfoto}}" alt="{{.Npeli}}">
+      </div>
+
+    
+      <div class="alert texto-blanco alert-dismissible bg-transparente">
+        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+        <strong>Calidad: {{.Npeli}}.</strong> 4K
+        {{.Texto}}
+        Streaming 2020.
+      </div>
   </div>
 </div>
+
 
       <!--botones de video-->
 <div class="content altura" id="reloj">
@@ -110,6 +131,15 @@
 </div>
 <!--fin botones de video-->
 
+<!-- Bucle -->
+<div class="container">
+  <script>
+      document.open();
+          document.write("{{ .Lfoto }}-->");
+      document.close();
+  </script>
+</div>
+<!-- Fin Bucle -->
 
 
 <section>
@@ -165,21 +195,19 @@
 </section>
 
 
-
 </main>
  
   <!-- Fin de HTML -->
+
+
+
 
   <!--pie de pagina-->
   <div class="container-fluid altura">
     <div class="row">
       <div class="col-12">
         <div class="text-center text-light bg-dark" id="footer">
-          <!--redes sociales-->
-          <p><a href="#">
-            
-          </a></p>
-  <!--fin redes sociales-->
+
           {{ .CompanyName }} &copy;2020, Autor: Victor Manuel Arbiol Martinez 
           <a href="https://creativecommons.org/licenses/by-nc-nd/2.0/deed.es" target="_blank">v1.1.2 Licencia: CC BY-NC-ND 3.0</a>
         </div>
@@ -260,7 +288,11 @@
       }
     })()
   </script>
-  <!-- Fin de Script -->
+
+<!-- Fin de Script -->
+
+
+
 </body>
 
 </html>

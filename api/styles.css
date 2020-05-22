@@ -145,6 +145,11 @@ a {color: white;}
   font-size: 50px;
 }
 
+/* fondo de menu */
+.bg-light {
+    background-color: #f8f9fa70!important;
+}
+
 /*video de fondo*/
 #myVideo {
   position: fixed;
