@@ -1,0 +1,20 @@
+# Binarios compilados
+*.exe
+*.exe~
+*.out
+mod
+
+# Tor onion service keys (NO SUBIR A GIT)
+hostname
+hs_ed25519_public_key
+hs_ed25519_secret_key
+
+# Google site verification
+googlef1c3d9aac05b6d9b.html
+
+# Directorio OpenCode
+.atl/
+
+# OS
+.DS_Store
+Thumbs.db

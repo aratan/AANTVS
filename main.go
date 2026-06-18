@@ -2,12 +2,9 @@
 
 import (
 	"encoding/json"
-
-	//"ws"
 	"fmt"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -115,7 +112,6 @@ func pelis(w http.ResponseWriter, r *http.Request) {
 	//limpiamos var para no rep la lista
 	chtml = ""
 	lfoto = ""
-	lfoto = `<div class="container">`
 }
 
 
@@ -123,7 +119,6 @@ func pelis(w http.ResponseWriter, r *http.Request) {
 // esto ya no se ejecuta al inicio
 func azar() int {
 	//Eleccion al azar
-	rand.Seed(time.Now().UnixNano())
 	min := 0
 	max := 20
 	i = (rand.Intn(max-min) + min)
@@ -140,7 +135,7 @@ func a(i int) { //API a lo bestia
 	if erro != nil {
 		panic(erro.Error())
 	}
-	body, erro := ioutil.ReadAll(res.Body)
+	body, erro := io.ReadAll(res.Body)
 	if erro != nil {
 		panic(erro.Error())
 	}
@@ -169,7 +164,7 @@ func b() {
 }
 
 func c(i int) { //lista TODO: FOR
-	for i := 0; i < 24; i++ {
+	for i := 0; i < 28; i++ {
 	
 		ii = strconv.Itoa(i) //para enlaces
 		//soporte 20 //message = fmt.Sprintf(peliculas.Groups[i].Stations[i].Name)
@@ -188,7 +183,7 @@ func c(i int) { //lista TODO: FOR
 		                 <img src='` + foto + `' alt='` + message + `' width='30%' height='50'>`
 	}
 
-	lfoto = lfoto + `</a></div><!--`
+	lfoto = lfoto + `</a></div>`
 	
 	routeMatch, _ = regexp.Compile(`^\/(\w+)`)
 
