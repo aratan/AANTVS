@@ -215,11 +215,13 @@ func buildList(startIdx int) pageData {
 						<source src="` + video + `" type="video/mp4">
 						</video>`
 
-		lfoto += `<a href='pelis?id=` + ii + `'> 
-		                 <img src='` + foto + `' alt='` + message + `' width='30%' height='50'>`
+		lfoto += `<a href='pelis?id=` + ii + `' class='movie'>
+		                 <img src='` + foto + `' alt='` + message + `'>
+		                 <div class='movie-info'>
+		                   <div class='movie-title'>` + message + `</div>
+		                 </div>
+		               </a>`
 	}
-
-	lfoto += `</a></div>`
 
 	return pageData{
 		Title:       "Cine Online",
