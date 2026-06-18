@@ -141,6 +141,14 @@ func azar() int {
 	return i
 }
 
+// jsonUnquoteKeys adds missing opening quotes to JSON object keys.
+// Fixes upstream data where keys like name": appear instead of "name":.
+func jsonUnquoteKeys(body []byte) []byte {
+	// Match key names not preceded by "
+	re := regexp.MustCompile(`(^|[^"])(")?(name|image|url|embed|playInNatPlayer|userAgent)\s*"?\s*:`)
+	return re.ReplaceAll(body, []byte(`$1"$3":`))
+}
+
 func fetchJSON() {
 	url := "https://pastebin.com/raw/s6DTUHCA"
 	res, err := http.Get(url)
@@ -153,6 +161,9 @@ func fetchJSON() {
 	if err != nil {
 		panic(err.Error())
 	}
+
+	// Sanitize JSON: some keys in the upstream API are missing opening quotes
+	body = jsonUnquoteKeys(body)
 
 	err = json.Unmarshal(body, &peliculas)
 	if err != nil {
