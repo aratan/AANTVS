@@ -25,7 +25,7 @@ PORT=8080 ./aantvs
 ```
 .
 ├── main.go              # Servidor y lógica principal
-├── Index.html           # Template principal (Go html/template)
+├── index.html           # Template principal (Go html/template)
 ├── api/                 # Archivos estáticos (CSS, JS, uploads)
 │   ├── styles.css
 │   ├── main.js
