@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
@@ -47,19 +48,13 @@ type pageData struct {
 	Lfoto       string
 }
 
-// --- Estado global ---
-// Mantenido por compatibilidad, idealmente migrar a handlers con estado propio.
+// --- Estado (solo lectura después de startup) ---
 
 var (
-	ii, message, foto, video, chtml, lfoto string
-	texto, dhora                           string
-	p                                      int
-	i                                      int // puntero reutilizado en varias funciones
-	t                                      *template.Template
-	routeMatch                             = regexp.MustCompile(`^\/(\w+)`)
-
-	pd        pageData
-	peliculas Peliculas
+	t              *template.Template
+	routeMatch     = regexp.MustCompile(`^\/(\w+)`)
+	peliculas      Peliculas
+	initialPageData pageData // solo se escribe en startup, lectura concurrente segura
 )
 
 // --- Inicialización ---
@@ -69,7 +64,7 @@ func init() {
 	t, err = template.ParseGlob("*.html")
 	if err != nil {
 		log.Println("Cannot parse templates:", err)
-		os.Exit(-1)
+		os.Exit(1)
 	}
 }
 
@@ -82,12 +77,12 @@ func root(w http.ResponseWriter, r *http.Request) {
 		page := matches[1] + ".html"
 		if t.Lookup(page) != nil {
 			w.WriteHeader(200)
-			t.ExecuteTemplate(w, page, pd)
+			t.ExecuteTemplate(w, page, initialPageData)
 			return
 		}
 	} else if r.URL.Path == "/" {
 		w.WriteHeader(200)
-		t.ExecuteTemplate(w, "index.html", pd)
+		t.ExecuteTemplate(w, "index.html", initialPageData)
 		return
 	}
 	w.WriteHeader(404)
@@ -95,50 +90,80 @@ func root(w http.ResponseWriter, r *http.Request) {
 }
 
 func pelis(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query()
-	pp, _ := strconv.Atoi(id["id"][0])
-	p = pp
+	idParam := r.URL.Query().Get("id")
+	if idParam == "" {
+		http.Error(w, "Missing id parameter", http.StatusBadRequest)
+		return
+	}
+	idx, err := strconv.Atoi(idParam)
+	if err != nil {
+		http.Error(w, "Invalid id parameter", http.StatusBadRequest)
+		return
+	}
 
-	if p >= 29 {
-		buildList(hora())
+	var pd pageData
+	if idx >= 29 {
+		pd = buildList(hora())
 	} else {
-		buildList(p)
+		pd = buildList(idx)
 	}
 
 	t.ExecuteTemplate(w, "index.html", pd)
-	chtml = ""
-	lfoto = ""
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "upload.html")
+	http.ServeFile(w, r, "api/upload.html")
 }
 
 func uploader(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(2000)
-
-	if r.Method == http.MethodPost {
-		file, fileinfo, err := r.FormFile("archivo")
-		f, err := os.OpenFile("./api/"+fileinfo.Filename, os.O_WRONLY|os.O_CREATE, 0666)
-		if err != nil {
-			log.Println(err)
-			fmt.Fprintf(w, "error al subir %v", err)
-			return
-		}
-		defer f.Close()
-
-		io.Copy(f, file)
-		fmt.Fprintf(w, "<div class='jumbotron bg-dark text-warning'>Cargado con exito </div> <p class='lead'>"+fileinfo.Filename+"</p>")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20) // 50 MB max
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		log.Println("Error parsing form:", err)
+		http.Error(w, "Error processing upload", http.StatusBadRequest)
+		return
+	}
+
+	file, fileinfo, err := r.FormFile("archivo")
+	if err != nil {
+		log.Println("Error getting form file:", err)
+		http.Error(w, "Error processing upload", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	safeName := filepath.Base(fileinfo.Filename)
+	if safeName == "." || safeName == "/" {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	f, err := os.OpenFile("./api/"+safeName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		log.Println("Error saving file:", err)
+		http.Error(w, "Error saving file", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, file); err != nil {
+		log.Println("Error writing file:", err)
+		http.Error(w, "Error saving file", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "<div class='jumbotron bg-dark text-warning'>Cargado con exito</div>")
 }
 
 // --- Helpers ---
 
 func azar() int {
-	min := 0
-	max := 20
-	i = rand.Intn(max-min) + min
-	return i
+	min, max := 0, 20
+	return rand.Intn(max-min) + min
 }
 
 // jsonUnquoteKeys adds missing opening quotes to JSON object keys.
@@ -149,37 +174,41 @@ func jsonUnquoteKeys(body []byte) []byte {
 	return re.ReplaceAll(body, []byte(`$1"$3":`))
 }
 
-func fetchJSON() {
+func fetchJSON(client *http.Client) error {
 	url := "https://pastebin.com/raw/s6DTUHCA"
-	res, err := http.Get(url)
+	res, err := client.Get(url)
 	if err != nil {
-		panic(err.Error())
+		return fmt.Errorf("fetching JSON: %w", err)
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetching JSON: unexpected status %d", res.StatusCode)
+	}
+
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		panic(err.Error())
+		return fmt.Errorf("reading JSON body: %w", err)
 	}
 
 	// Sanitize JSON: some keys in the upstream API are missing opening quotes
 	body = jsonUnquoteKeys(body)
 
-	err = json.Unmarshal(body, &peliculas)
-	if err != nil {
-		panic(err.Error())
+	if err := json.Unmarshal(body, &peliculas); err != nil {
+		return fmt.Errorf("unmarshaling JSON: %w", err)
 	}
+
+	return nil
 }
 
-func buildList(startIdx int) {
-	for idx := 0; idx < 28; idx++ {
-		ii = strconv.Itoa(idx)
+func buildList(startIdx int) pageData {
+	var chtml, lfoto string
 
-		message = peliculas.Groups[0].Stations[idx].Name
-		foto = peliculas.Groups[0].Stations[idx].Image
-		video = peliculas.Groups[0].Stations[idx].URL
-		dhora = peliculas.Groups[0].Stations[idx].Embed
-		texto = peliculas.Groups[0].Stations[idx].PlayInNatPlayer
+	for idx := 0; idx < 28; idx++ {
+		ii := strconv.Itoa(idx)
+		foto := peliculas.Groups[0].Stations[idx].Image
+		video := peliculas.Groups[0].Stations[idx].URL
+		message := peliculas.Groups[0].Stations[idx].Name
 
 		chtml += `<div class="movie">
 						<br><video  width="50%" height="50%" controls poster="` + foto + `">
@@ -192,33 +221,36 @@ func buildList(startIdx int) {
 
 	lfoto += `</a></div>`
 
-	pd = pageData{
-		"Cine Online",
-		peliculas.Name,
-		peliculas.Groups[0].Stations[startIdx].Name,
-		peliculas.Groups[0].Stations[startIdx].Image,
-		peliculas.Groups[0].Stations[startIdx].URL,
-		peliculas.Groups[0].Stations[startIdx].Embed,
-		peliculas.Groups[0].Stations[startIdx].PlayInNatPlayer,
-		chtml,
-		lfoto,
+	return pageData{
+		Title:       "Cine Online",
+		CompanyName: peliculas.Name,
+		Npeli:       peliculas.Groups[0].Stations[startIdx].Name,
+		Nfoto:       peliculas.Groups[0].Stations[startIdx].Image,
+		Nurl:        peliculas.Groups[0].Stations[startIdx].URL,
+		Dhora:       peliculas.Groups[0].Stations[startIdx].Embed,
+		Texto:       peliculas.Groups[0].Stations[startIdx].PlayInNatPlayer,
+		Chtml:       chtml,
+		Lfoto:       lfoto,
 	}
 }
 
 func hora() int {
 	t := time.Now()
 	fecha := fmt.Sprintf("%02d", t.Hour())
-	i, _ = strconv.Atoi(fecha)
+	i, _ := strconv.Atoi(fecha)
 	return i
 }
 
 // --- Entry point ---
 
 func main() {
-	azaro := azar()
-	fetchJSON()
-	buildList(azaro)
-	buildList(hora())
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	if err := fetchJSON(client); err != nil {
+		log.Fatalf("Failed to fetch data: %v", err)
+	}
+
+	initialPageData = buildList(hora())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", root)
