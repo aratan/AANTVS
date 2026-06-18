@@ -1,10 +1,7 @@
-/* CSS Document */
 * {
-  margin: 0px;
-  padding: 0px;
-  -webkit-box-sizing: border-box;
-          box-sizing: border-box;
-  /*background-color: #E9ECEF;*/
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
@@ -12,7 +9,6 @@ body {
   color: rgba(255, 255, 255, 0.9);
   font-family: Arial;
   font-size: 1.0625rem;
-  /*&.clase es como IF*/
 }
 
 body p {
@@ -27,6 +23,7 @@ body li a p {
   color: rgba(255, 255, 255, 0.9);
 }
 
+/* Modo claro */
 body.dark {
   background: rgba(243, 239, 239, 0.9);
   color: rgba(30, 31, 29, 0.9);
@@ -45,7 +42,6 @@ body.dark li a p {
 }
 
 video {
-  /*background-color: blue;*/
   z-index: -100;
   width: 100%;
   height: 100%;
@@ -56,19 +52,13 @@ img {
   height: 200px;
 }
 
-/*hr{background: rgba(248, 248, 250,0.6);}
-p{color:white;}
-li a p {color:rgb(250, 243, 243);}
-a {color: white;}
-*/
+/* Switch día/noche */
 .switch {
   background-color: rgba(248, 248, 250, 0.6);
   border-radius: 1000px;
   border: none;
   position: relative;
   cursor: pointer;
-  display: -webkit-box;
-  display: -ms-flexbox;
   display: flex;
   outline: none;
 }
@@ -84,10 +74,8 @@ a {color: white;}
   left: 0;
   right: unset;
   border-radius: 100px;
-  -webkit-transition: .3s ease all;
-  transition: .3s ease all;
-  -webkit-box-shadow: 0px 0px 2px rgba(47, 47, 47, 0.274);
-          box-shadow: 0px 0px 2px rgba(47, 47, 47, 0.274);
+  transition: 0.3s ease all;
+  box-shadow: 0 0 2px rgba(47, 47, 47, 0.274);
 }
 
 .switch.active {
@@ -109,7 +97,7 @@ a {color: white;}
   color: rgba(187, 236, 11, 0.733);
 }
 
-/* fin  switch*/
+/* Utilidades */
 .bg-transparente {
   background-color: rgba(47, 47, 47, 0.274) !important;
 }
@@ -118,13 +106,10 @@ a {color: white;}
   color: rgba(251, 249, 249, 0.9);
 }
 
-/*pantalla completa*/
 .list-group-item {
   position: relative;
   display: block;
-  padding: .75rem 1.25rem;
-  /*background-color: rgba(149, 52, 85, 0.3);
-    border: 1px solid rgba(151, 6, 50,0.5);*/
+  padding: 0.75rem 1.25rem;
 }
 
 .bg-blanco {
@@ -141,16 +126,15 @@ a {color: white;}
 }
 
 .publi {
-  font-family: elvetica;
   font-size: 50px;
 }
 
-/* fondo de menu */
+/* Fondo de menú */
 .bg-light {
-    background-color: #f8f9fa70!important;
+  background-color: #f8f9fa70 !important;
 }
 
-/*video de fondo*/
+/* Video de fondo */
 #myVideo {
   position: fixed;
   right: 0;
@@ -161,7 +145,7 @@ a {color: white;}
   min-height: 100%;
 }
 
-/*barra*/
+/* Barra inferior */
 .content {
   position: fixed;
   bottom: 0;
@@ -170,18 +154,3 @@ a {color: white;}
   width: 100%;
   padding: 20px;
 }
-
-/*#myBtn {
-    width: 200px;
-    font-size: 18px;
-    padding: 10px;
-    border: none;
-    background: #000;
-    color: #fff;
-    cursor: pointer;
-  }*/
-/*#myBtn:hover {
-    background: #ddd;
-    color: black;
-  }*/
-/*# sourceMappingURL=styles.css.map */
