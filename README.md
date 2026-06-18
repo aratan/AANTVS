@@ -2,6 +2,9 @@
 
 Servidor de streaming de películas y series en Go. Consume contenido desde una API remota (Pastebin) y lo sirve vía HTTP con reproducción HLS + IPFS.
 
+<img width="1920" height="1050" alt="Captura de pantalla_20260618_161729" src="https://github.com/user-attachments/assets/ae6853ce-a562-46bd-9b40-6a6bded5749d" />
+
+
 ## Stack
 
 - **Lenguaje**: Go 1.21+
