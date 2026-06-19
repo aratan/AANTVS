@@ -1,6 +1,8 @@
 ﻿package main
 
 import (
+	"bytes"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -12,8 +14,37 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// Allowed extensions and their MIME types. Nil means not allowed.
+var extAllowed = map[string]string{
+	".mp4": "video/mp4", ".webm": "video/webm", ".ogg": "video/ogg",
+	".jpg":  "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+	".gif":  "image/gif",  ".webp": "image/webp",
+	".csv":  "text/csv",   ".json": "application/json",  ".txt": "text/plain",
+	".pdf":  "application/pdf",
+}
+
+// readLimit reads up to maxBytes from r; returns what was read.
+func readLimit(r io.Reader, maxBytes int64) ([]byte, error) {
+	data := &bytes.Buffer{}
+	if _, err := io.CopyN(data, r, int64(maxBytes)); err != nil && err != io.EOF {
+		return data.Bytes(), err
+	}
+	return data.Bytes(), nil
+}
+
+// randHex returns n random hex characters.
+func randHex(n int) (string, error) {
+	b := make([]byte, n)
+	_, err := crand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", b), nil
+}
 
 // --- Tipos ---
 
@@ -116,47 +147,144 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func uploader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// 1. Method check
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20) // 50 MB max
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		log.Println("Error parsing form:", err)
-		http.Error(w, "Error processing upload", http.StatusBadRequest)
+	const maxFileSize = 50 << 20 // 50 MB consistent on BOTH sides
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
+	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+		switch {
+		case err.Error() == "http: request body too large":
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			json.NewEncoder(w).Encode(map[string]string{"error": "request body exceeds 50 MB limit"})
+		default:
+			log.Println("uploader:", err)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid multipart form"})
+		}
 		return
 	}
 
-	file, fileinfo, err := r.FormFile("archivo")
+	if len(r.MultipartForm.File) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no file provided"})
+		return
+	}
+
+	// 2. Open the uploaded file (only one allowed per request)
+	headers := r.MultipartForm.File["archivo"]
+	if len(headers) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing 'archivo' field"})
+		return
+	}
+
+	f, err := headers[0].Open()
 	if err != nil {
-		log.Println("Error getting form file:", err)
-		http.Error(w, "Error processing upload", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	safeName := filepath.Base(fileinfo.Filename)
-	if safeName == "." || safeName == "/" {
-		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		log.Println("uploader: fopen:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to open uploaded file"})
 		return
 	}
 
-	f, err := os.OpenFile("./api/"+safeName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	// 3. Sniff first 512 bytes for MIME detection
+	const sniffLen = 512
+	sniff, err := readLimit(f, sniffLen)
 	if err != nil {
-		log.Println("Error saving file:", err)
-		http.Error(w, "Error saving file", http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-
-	if _, err := io.Copy(f, file); err != nil {
-		log.Println("Error writing file:", err)
-		http.Error(w, "Error saving file", http.StatusInternalServerError)
+		f.Close()
+		log.Println("uploader: sniff:", err)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to inspect file data"})
 		return
 	}
 
-	fmt.Fprintf(w, "<div class='jumbotron bg-dark text-warning'>Cargado con exito</div>")
+	ext := strings.ToLower(filepath.Ext(headers[0].Filename))
+
+	// 4. Extension whitelist
+	if _, allowed := extAllowed[ext]; !allowed {
+		f.Close()
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file type not allowed"})
+		return
+	}
+
+	// 5. Real MIME check against extension declaration
+	got := http.DetectContentType(sniff)
+	expected := extAllowed[ext]
+	if expected != got {
+		f.Close()
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file content type mismatch (expected " + expected + ", detected " + got + ")"})
+		return
+	}
+
+	// 6. Generate collision-proof filename
+	hash, randErr := randHex(16)
+	if randErr != nil {
+		f.Close()
+		log.Println("uploader: rand:", randErr)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "internal error"})
+		return
+	}
+
+	destName := fmt.Sprintf("%s%s", hash, ext)
+	destPath := filepath.Join("api", destName)
+
+	if _, statErr := os.Stat(destPath); statErr == nil {
+		f.Close()
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "filename collision"})
+		return
+	}
+
+	// 7. Save the file
+	out, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		f.Close()
+		log.Println("uploader: save:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create file"})
+		return
+	}
+
+	// Seek back to start and copy the whole remaining body
+	if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+		f.Close(); out.Close()
+		os.Remove(destPath)
+		log.Println("uploader: seek:", seekErr)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save file"})
+		return
+	}
+
+	n, err := io.Copy(out, f)
+	f.Close(); out.Close()
+
+	if err != nil {
+		os.Remove(destPath)
+		log.Println("uploader: writefile:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save file"})
+		return
+	}
+
+	// 8. Success — structured JSON response
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":   true,
+		"file": destName,
+		"path": "/api/" + destName,
+		"type": ext,
+		"size": n,
+	})
 }
 
 // --- Helpers ---
