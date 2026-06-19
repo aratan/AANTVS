@@ -3,24 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Administración</title>
-  <link rel="icon" type="image/png" href="/api/favicon.ico">
-  <link href="/api/styles.css" rel="stylesheet">
-  <style>
-    body {
-      font-family: monospace;
-      background-color: #000;
-      color: #fafafa;
-    }
-    .main-container {
-      min-height: 100vh;
-    }
-  </style>
+  <title>Administración — Subir ficheros</title>
+  <link rel="stylesheet" href="/api/upload.css">
 </head>
 <body>
-  <form action="/api" method="post" enctype="multipart/form-data">
-    <input type="file" name="archivo">
-    <input type="submit" value="Enviar">
-  </form>
+  <div class="admin">
+    <h1>Subir fichero</h1>
+
+    <div id="dropzone" class="dropzone">
+      <input type="file" id="fileInput" hidden accept=".mp4,.webm,.ogg,.jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.csv,.json,.torrent,.zip,.mp3,.wav">
+      <p>Arrastra un fichero aquí o <span class="browse-link" id="browseBtn">haz clic para buscar</span></p>
+      <small class="hint máx. 50&nbsp;MB — formatos: mp4, webm, ogg, jpg, png, gif, pdf, txt, json, csv, torrent</small>
+    </div>
+
+    <div id="preview" class="preview hidden">
+      <img id="preview-img" class="hidden" alt="">
+      <video id="preview-vid" class="hidden" controls></video>
+      <p id="fileInfo" class="info"></p>
+      <button id="uploadBtn" class="btn btn--primary">Subir</button>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+  </div>
+
+  <script src="/api/upload.js"></script>
 </body>
 </html>
