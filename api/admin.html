@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel — Gestionar archivos</title>
+  <link rel="stylesheet" href="/api/admin.css">
+</head>
+<body>
+  <div class="admin-panel">
+
+    <header class="panel-header">
+      <h1>Gestionar archivos</h1>
+      <a href="/" class="btn btn--secondary">← Volver al stream</a>
+    </header>
+
+    <div class="controls">
+      <input type="text" id="searchBox" placeholder="Buscar por nombre..." class="search-box">
+      <select id="filterBy" class="filetype-filter">
+        <option value="">Todos los tipos</option>
+        <option value="video">Vídeo</option>
+        <option value="image">Imagen</option>
+        <option value="audio">Audio</option>
+        <option value="doc">Documento</option>
+        <option value="other">Otros</option>
+      </select>
+    </div>
+
+    <div id="fileList" class="file-list"></div>
+    <p id="loadingMsg" class="info-msg hidden">Cargando archivos…</p>
+    <p id="emptyMsg" class="info-msg hidden">No hay archivos subidos.</p>
+  </div>
+
+  <!-- confirmation modal -->
+  <div id="modal" class="modal overlay hidden">
+    <div class="modal-box">
+      <h2>Confirmar borrado</h2>
+      <p id="modalMsg"></p>
+      <div class="modal-actions">
+        <button id="confirmDeleteBtn" class="btn btn--danger">Borrar</button>
+        <button id="cancelDeleteBtn" class="btn btn--secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- notification toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/api/admin.js"></script>
+</body>
+</html>
