@@ -1,0 +1,32 @@
+# OpenSpec Configuration for AANTVS
+
+## Project Context
+
+- **Name**: AANTVS (AANTV-Stream)
+- **Stack**: Go 1.21+ (stdlib only, zero external dependencies)
+- **Architecture**: Single-binary HTTP server with template rendering; file upload endpoint serving static files from `api/` directory
+- **Purpose**: Movie/series streaming server consuming remote data (Pastebin API) and serving via HTTP with HLS support
+
+## Phase Rules
+
+| Phase       | Auto-start     | Review Budget |
+|-------------|----------------|---------------|
+| proposal    | auto           | 400 lines     |
+| spec        | auto           | 400 lines     |
+| design      | auto           | 400 lines     |
+| tasks       | auto           | 400 lines     |
+| apply       | human-required | 400 lines     |
+| verify      | auto           | 400 lines     |
+| archive     | manual         | —             |
+
+## Testing
+
+- **Framework**: go test (std testing package)
+- **Coverage**: `go test -cover` — available but not yet configured
+- **Test Layer Unit**: ❌ Not implemented (no *_test.go files)
+- **Test Layer Integration**: ❌ Not implemented
+- **Test Layer E2E**: ❌ Not implemented
+
+## Strict TDD Mode: false
+
+Reason: No test files exist in the codebase. The project can build and deploy without tests. Test-driven development is not enforced.
