@@ -132,14 +132,26 @@ func pelis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var pd pageData
-	if idx >= 29 {
-		pd = buildList(hora())
-	} else {
-		pd = buildList(idx)
+	pd, ok := validateIdx(idx)
+	if !ok {
+		http.Error(w, "Invalid video index", http.StatusBadRequest)
+		return
 	}
 
 	t.ExecuteTemplate(w, "index.html", pd)
+}
+
+func validateIdx(idx int) (pageData, bool) {
+	totalStations := len(peliculas.Groups[0].Stations)
+	if totalStations == 0 {
+		return pageData{}, false
+	}
+	startIdx := idx
+	if startIdx < 0 || startIdx >= totalStations {
+		startIdx = totalStations - 1
+	}
+	pd := buildList(startIdx)
+	return pd, true
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
