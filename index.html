@@ -49,7 +49,7 @@
   <!-- Hero Section -->
   <section class="hero">
     <div class="hero-backdrop">
-      <img src="{{.Nfoto}}" alt="{{.Npeli}}" class="hero-backdrop-img">
+      <img src="{{ .Active.Image }}" alt="{{ .Active.Name }}" class="hero-backdrop-img">
       <div class="hero-gradient"></div>
     </div>
     <div class="hero-content">
@@ -58,9 +58,9 @@
       <p class="hero-meta">
         <span class="hero-rating"><i class="fas fa-star"></i> HD</span>
         <span class="hero-dot">•</span>
-        <span>{{.Dhora}}</span>
+        <span>{{ .Active.Embed }}</span>
       </p>
-      <p class="hero-description">{{.Texto}}</p>
+      <p class="hero-description">{{ .Active.PlayInNatPlayer }}</p>
       <div class="hero-actions">
         <button class="btn btn-primary" id="playBtn">
           <i class="fas fa-play"></i> Reproducir
@@ -75,7 +75,7 @@
   <!-- Video Player (hidden by default) -->
   <section class="player-section" id="playerSection">
     <div class="player-container">
-      <video id="video" controls preload="metadata" poster="{{.Nfoto}}"></video>
+      <video id="video" controls preload="metadata" poster="{{ .Active.Image }}"></video>
       <button class="player-close" id="playerClose">
         <i class="fas fa-times"></i>
       </button>
@@ -92,12 +92,14 @@
           <i class="fas fa-chevron-left"></i>
         </button>
         <div class="row-scroll" id="continueRow">
-          <!-- Injected by template -->
-          <script>
-            document.open();
-            document.write("{{ .Lfoto }}");
-            document.close();
-          </script>
+          {{ range .MovieCards }}
+          <a href="/pelis?id={{ .SafePageIdx }}" class="movie">
+            <img src="{{ .Image }}" alt="{{ .Name }}">
+            <div class="movie-info">
+              <div class="movie-title">{{ .Name }}</div>
+            </div>
+          </a>
+          {{ end }}
         </div>
         <button class="row-nav row-nav-right" data-row="continue">
           <i class="fas fa-chevron-right"></i>
@@ -113,11 +115,14 @@
           <i class="fas fa-chevron-left"></i>
         </button>
         <div class="row-scroll" id="popularRow">
-          <script>
-            document.open();
-            document.write("{{ .Lfoto }}");
-            document.close();
-          </script>
+          {{ range .MovieCards }}
+          <a href="/pelis?id={{ .SafePageIdx }}" class="movie">
+            <img src="{{ .Image }}" alt="{{ .Name }}">
+            <div class="movie-info">
+              <div class="movie-title">{{ .Name }}</div>
+            </div>
+          </a>
+          {{ end }}
         </div>
         <button class="row-nav row-nav-right" data-row="popular">
           <i class="fas fa-chevron-right"></i>
@@ -133,11 +138,14 @@
           <i class="fas fa-chevron-left"></i>
         </button>
         <div class="row-scroll" id="newRow">
-          <script>
-            document.open();
-            document.write("{{ .Lfoto }}");
-            document.close();
-          </script>
+          {{ range .MovieCards }}
+          <a href="/pelis?id={{ .SafePageIdx }}" class="movie">
+            <img src="{{ .Image }}" alt="{{ .Name }}">
+            <div class="movie-info">
+              <div class="movie-title">{{ .Name }}</div>
+            </div>
+          </a>
+          {{ end }}
         </div>
         <button class="row-nav row-nav-right" data-row="new">
           <i class="fas fa-chevron-right"></i>
@@ -209,7 +217,7 @@
       }
 
       function handleInit(node) {
-        const testhash = "{{ .Nurl }}";
+        const testhash = "{{ .Active.URL }}";
         Hls.DefaultConfig.loader = HlsjsIpfsLoader;
         Hls.DefaultConfig.debug = false;
         if (Hls.isSupported()) {
