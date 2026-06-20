@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"io"
 	"log"
@@ -67,16 +68,20 @@ type Peliculas struct {
 	URL   string `json:"url"`
 }
 
+type MovieCard struct {
+	Name            string `json:"name"`
+	Image           string `json:"image"`              // poster/screenshot URL
+	URL             string `json:"url"`                // video source direct link
+	Embed           string `json:"embed"`              // iframe embed URL
+	PlayInNatPlayer string `json:"playInNatPlayer"`    // NatPlayer manifest/hash
+	SafePageIdx     int    // URL parameter: "pelis?id=X"
+}
+
 type pageData struct {
 	Title       string
 	CompanyName string
-	Npeli       string
-	Nfoto       string
-	Nurl        string
-	Dhora       string
-	Texto       string
-	Chtml       string
-	Lfoto       string
+	MovieCards  []MovieCard   // replaces Chtml + Lfoto
+	Active      MovieCard     // selected movie, replaces Npeli/Nfoto/Nurl/Dhora/Texto
 }
 
 // --- Estado (solo lectura después de startup) ---
@@ -342,37 +347,37 @@ func fetchJSON(client *http.Client) error {
 }
 
 func buildList(startIdx int) pageData {
-	var chtml, lfoto string
+	total := len(peliculas.Groups[0].Stations)
+	cards := make([]MovieCard, total)
 
-	for idx := 0; idx < 28; idx++ {
-		ii := strconv.Itoa(idx)
-		foto := peliculas.Groups[0].Stations[idx].Image
-		video := peliculas.Groups[0].Stations[idx].URL
-		message := peliculas.Groups[0].Stations[idx].Name
+	for idx := 0; idx < total; idx++ {
+		s := &peliculas.Groups[0].Stations[idx]
+		cards[idx] = MovieCard{
+			Name:            html.EscapeString(s.Name),
+			Image:           html.EscapeString(s.Image),
+			URL:             html.EscapeString(s.URL),
+			Embed:           html.EscapeString(s.Embed),
+			PlayInNatPlayer: s.PlayInNatPlayer, // text content, not placed in attribute context
+			SafePageIdx:     idx,
+		}
+	}
 
-		chtml += `<div class="movie">
-						<br><video  width="50%" height="50%" controls poster="` + foto + `">
-						<source src="` + video + `" type="video/mp4">
-						</video>`
-
-		lfoto += `<a href='pelis?id=` + ii + `' class='movie'>
-		                 <img src='` + foto + `' alt='` + message + `'>
-		                 <div class='movie-info'>
-		                   <div class='movie-title'>` + message + `</div>
-		                 </div>
-		               </a>`
+	if startIdx < 0 || startIdx >= total {
+		startIdx = total - 1
 	}
 
 	return pageData{
 		Title:       "Cine Online",
 		CompanyName: peliculas.Name,
-		Npeli:       peliculas.Groups[0].Stations[startIdx].Name,
-		Nfoto:       peliculas.Groups[0].Stations[startIdx].Image,
-		Nurl:        peliculas.Groups[0].Stations[startIdx].URL,
-		Dhora:       peliculas.Groups[0].Stations[startIdx].Embed,
-		Texto:       peliculas.Groups[0].Stations[startIdx].PlayInNatPlayer,
-		Chtml:       chtml,
-		Lfoto:       lfoto,
+		MovieCards:  cards,
+		Active: MovieCard{
+			Name:            html.EscapeString(peliculas.Groups[0].Stations[startIdx].Name),
+			Image:           html.EscapeString(peliculas.Groups[0].Stations[startIdx].Image),
+			URL:             html.EscapeString(peliculas.Groups[0].Stations[startIdx].URL),
+			Embed:           html.EscapeString(peliculas.Groups[0].Stations[startIdx].Embed),
+			PlayInNatPlayer: peliculas.Groups[0].Stations[startIdx].PlayInNatPlayer,
+			SafePageIdx:     startIdx,
+		},
 	}
 }
 
