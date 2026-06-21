@@ -17,10 +17,10 @@ class MSEPlayer {
   constructor(videoEl, options = {}) {
     this.video = videoEl;
     this.stationIdx = options.stationIdx ?? 0;
-    this.baseUrl = options.baseUrl ?? '/api/chunk';
-    this.initialChunkSize = options.initialChunkSize ?? 131072;   // 128KB
-    this.maxChunkSize = options.maxChunkSize ?? 2097152;          // 2MB
-    this.bufferTarget = options.bufferTarget ?? 5242880;          // 5MB target buffer
+    this.baseUrl = options.baseUrl ?? '/api/p2p/stream';
+    this.handshakeChunkSize = options.handshakeChunkSize ?? 131072;   // 128KB
+    this.pipelineChunkSize = options.pipelineChunkSize ?? 2097152;    // 2MB
+    this.bufferTarget = options.bufferTarget ?? 5242880;              // 5MB target buffer
     this.reconnectDelay = options.reconnectDelay ?? 1000;
     this.maxReconnects = options.maxReconnects ?? 10;
 
@@ -31,7 +31,14 @@ class MSEPlayer {
     this.playing = false;
     this.aborted = false;
     this.reconnectCount = 0;
-    this.currentChunkSize = this.initialChunkSize;
+
+    // Adaptive buffer: handshake → pipeline
+    this.mode = 'handshake'; // 'handshake' or 'pipeline'
+    this.currentChunkSize = this.handshakeChunkSize;
+    this.modeSwitchBufferTime = 5; // seconds of buffer before switching to pipeline
+    this.consecutiveSuccesses = 0;
+    this.consecutiveFailures = 0;
+    this.latencyHistory = [];
 
     // Metrics
     this.metrics = {
@@ -40,11 +47,14 @@ class MSEPlayer {
       loadTimes: [],
       bufferLevels: [],
       errors: 0,
+      mode: 'handshake',
+      modeTransitions: 0,
     };
 
     this._onProgress = null;
     this._onError = null;
     this._onComplete = null;
+    this._onModeChange = null;
   }
 
   /**
@@ -162,6 +172,7 @@ class MSEPlayer {
   onProgress(fn) { this._onProgress = fn; }
   onError(fn) { this._onError = fn; }
   onComplete(fn) { this._onComplete = fn; }
+  onModeChange(fn) { this._onModeChange = fn; }
 
   /**
    * Get current metrics.
@@ -233,7 +244,7 @@ class MSEPlayer {
   }
 
   async _fetchChunk(stationIdx, chunkIdx) {
-    const url = `${this.baseUrl}/${stationIdx}/${chunkIdx}?session=${this.sessionId}&size=${this.currentChunkSize}`;
+    const url = `${this.baseUrl}?id=${stationIdx}&chunk=${chunkIdx}&session=${this.sessionId}&size=${this.currentChunkSize}&mode=${this.mode}`;
     const start = performance.now();
 
     const response = await fetch(url);
@@ -244,6 +255,12 @@ class MSEPlayer {
     const buffer = await response.arrayBuffer();
     const elapsed = performance.now() - start;
     this.metrics.loadTimes.push(elapsed);
+    this.latencyHistory.push(elapsed);
+
+    // Keep last 10 latency samples
+    if (this.latencyHistory.length > 10) {
+      this.latencyHistory.shift();
+    }
 
     return buffer;
   }
@@ -328,14 +345,51 @@ class MSEPlayer {
 
   _adaptChunkSize() {
     const bufferLevel = this._getBufferLevel();
+    const bufferSeconds = this._getBufferSeconds();
+    const avgLatency = this._getAvgLatency();
 
-    if (bufferLevel < this.bufferTarget * 0.3) {
-      // Buffer low — shrink chunk size for faster fills
-      this.currentChunkSize = Math.max(this.initialChunkSize, this.currentChunkSize * 0.75);
-    } else if (bufferLevel > this.bufferTarget * 0.8) {
-      // Buffer healthy — grow chunk size for efficiency
-      this.currentChunkSize = Math.min(this.maxChunkSize, this.currentChunkSize * 1.5);
+    // Mode switching: handshake → pipeline
+    if (this.mode === 'handshake') {
+      // Switch to pipeline when buffer is healthy (>5s) and latency is low (<500ms)
+      if (bufferSeconds > this.modeSwitchBufferTime && avgLatency < 500) {
+        this.mode = 'pipeline';
+        this.currentChunkSize = this.pipelineChunkSize;
+        this.metrics.mode = 'pipeline';
+        this.metrics.modeTransitions++;
+        if (this._onModeChange) this._onModeChange('pipeline');
+        console.log(`[MSE] Mode → PIPELINE (buffer=${bufferSeconds.toFixed(1)}s, latency=${avgLatency.toFixed(0)}ms)`);
+      }
+    } else {
+      // Switch back to handshake if buffer drops or latency spikes
+      if (bufferSeconds < 2 || avgLatency > 2000) {
+        this.mode = 'handshake';
+        this.currentChunkSize = this.handshakeChunkSize;
+        this.metrics.mode = 'handshake';
+        this.metrics.modeTransitions++;
+        if (this._onModeChange) this._onModeChange('handshake');
+        console.log(`[MSE] Mode → HANDSHAKE (buffer=${bufferSeconds.toFixed(1)}s, latency=${avgLatency.toFixed(0)}ms)`);
+      }
     }
+
+    // Adaptive sizing within current mode
+    if (bufferLevel < this.bufferTarget * 0.3) {
+      this.currentChunkSize = Math.max(this.handshakeChunkSize, this.currentChunkSize * 0.75);
+    } else if (bufferLevel > this.bufferTarget * 0.8 && this.mode === 'pipeline') {
+      this.currentChunkSize = Math.min(this.pipelineChunkSize, this.currentChunkSize * 1.5);
+    }
+  }
+
+  _getBufferSeconds() {
+    if (!this.sourceBuffer || this.sourceBuffer.buffered.length === 0) return 0;
+    const buffered = this.sourceBuffer.buffered;
+    const start = buffered.start(0);
+    const end = buffered.end(0);
+    return end - this.video.currentTime;
+  }
+
+  _getAvgLatency() {
+    if (this.latencyHistory.length === 0) return 1000;
+    return this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length;
   }
 
   _isNetworkError(err) {

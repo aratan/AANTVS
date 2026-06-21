@@ -421,6 +421,151 @@ func qosHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(metrics)
 }
 
+// RegisterRequest is the payload for /api/p2p/register.
+type RegisterRequest struct {
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Type string `json:"type"`
+}
+
+const chunkSizeBytes = 262144 // 256KB default chunk size
+
+func p2pRegisterHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.Path == "" || req.Size == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing path or size"})
+		return
+	}
+	numChunks := int(req.Size / chunkSizeBytes)
+	if req.Size%chunkSizeBytes != 0 {
+		numChunks++
+	}
+	log.Printf("p2p: registered '%s' — %d chunks (%d bytes)", req.Name, numChunks, req.Size)
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "chunks": numChunks, "size": req.Size, "name": req.Name})
+}
+
+// ReportPeerRequest is the payload for /api/p2p/report-peer.
+type ReportPeerRequest struct {
+	PeerID string `json:"peer_id"`
+	Reason string `json:"reason"`
+}
+
+func reportPeerHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req ReportPeerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.PeerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing peer_id"})
+		return
+	}
+	log.Printf("p2p: peer report — %s: %s", req.PeerID, req.Reason)
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "peer_id": req.PeerID, "reason": req.Reason})
+}
+
+// StreamRequest holds query params for /api/p2p/stream.
+type StreamRequest struct {
+	StationIdx int    `form:"id"`
+	ChunkIdx   int    `form:"chunk"`
+	Session    string `form:"session"`
+	Size       int    `form:"size"`
+	Mode       string `form:"mode"` // "handshake" or "pipeline"
+}
+
+func streamHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+
+	q := r.URL.Query()
+	req := StreamRequest{
+		StationIdx: 0,
+		ChunkIdx:   0,
+		Size:       chunkSizeBytes,
+		Mode:       "handshake",
+	}
+	if id := q.Get("id"); id != "" {
+		fmt.Sscanf(id, "%d", &req.StationIdx)
+	}
+	if chunk := q.Get("chunk"); chunk != "" {
+		fmt.Sscanf(chunk, "%d", &req.ChunkIdx)
+	}
+	if size := q.Get("size"); size != "" {
+		fmt.Sscanf(size, "%d", &req.Size)
+	}
+	if mode := q.Get("mode"); mode != "" {
+		req.Mode = mode
+	}
+
+	// Clamp size
+	if req.Size < 65536 {
+		req.Size = 65536
+	}
+	if req.Size > 2097152 {
+		req.Size = 2097152
+	}
+
+	w.Header().Set("X-Chunk-Mode", req.Mode)
+	w.Header().Set("X-Chunk-Size", fmt.Sprintf("%d", req.Size))
+
+	// TODO: Serve actual video chunks from P2P swarm or local disk
+	// For now, return empty chunk (placeholder)
+	log.Printf("p2p: stream — station=%d chunk=%d mode=%s size=%d", req.StationIdx, req.ChunkIdx, req.Mode, req.Size)
+	w.WriteHeader(http.StatusOK)
+}
+
+// InventoryItem represents a catalog entry with rareness data.
+type InventoryItem struct {
+	Name      string  `json:"name"`
+	Path      string  `json:"path"`
+	Size      int64   `json:"size"`
+	Type      string  `json:"type"`
+	Peers     int     `json:"peers"`
+	Rareness  string  `json:"rareness"` // "high", "medium", "low"
+}
+
+func inventoryHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	filter := r.URL.Query().Get("filter")
+	minPeers := 0
+	if mp := r.URL.Query().Get("min_peers"); mp != "" {
+		fmt.Sscanf(mp, "%d", &minPeers)
+	}
+
+	// TODO: Build inventory from actual P2P swarm data
+	// For now, return empty inventory
+	items := make([]InventoryItem, 0)
+	_ = filter
+	_ = minPeers
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":    true,
+		"items": items,
+		"total": len(items),
+	})
+}
+
 // --- Entry point ---
 
 func main() {
@@ -439,6 +584,10 @@ func main() {
 	mux.HandleFunc("/subir", uploadHandler)
 	mux.HandleFunc("/api", uploader)
 	mux.HandleFunc("/api/p2p/qos", qosHandler)
+	mux.HandleFunc("/api/p2p/register", p2pRegisterHandler)
+	mux.HandleFunc("/api/p2p/report-peer", reportPeerHandler)
+	mux.HandleFunc("/api/p2p/stream", streamHandler)
+	mux.HandleFunc("/api/p2p/inventory", inventoryHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
