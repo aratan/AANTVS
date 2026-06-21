@@ -35,37 +35,91 @@ window.addEventListener('scroll', () => {
   lastScroll = currentScroll;
 });
 
-// === Video Player ===
+// === Video Player (MSE-enabled) ===
 const playBtn = document.getElementById('playBtn');
 const playerSection = document.getElementById('playerSection');
 const playerClose = document.getElementById('playerClose');
 const mainVideo = document.getElementById('video');
 
-playBtn?.addEventListener('click', () => {
+let msePlayer = null;
+let qosOverlay = null;
+
+function getPlayer() {
+  if (!msePlayer && mainVideo) {
+    msePlayer = new MSEPlayer(mainVideo, {
+      stationIdx: getStationIdx(),
+      baseUrl: '/api/chunk',
+    });
+    // Wire QoS overlay to MSE player metrics
+    if (qosOverlay) {
+      msePlayer.onProgress((metrics) => qosOverlay.updateFromPlayer(metrics));
+    }
+  }
+  return msePlayer;
+}
+
+function getStationIdx() {
+  const params = new URLSearchParams(window.location.search);
+  return parseInt(params.get('id') || '0', 10);
+}
+
+function getQoS() {
+  if (!qosOverlay) {
+    const container = document.getElementById('playerContainer');
+    if (container) {
+      qosOverlay = new QoSOverlay(container);
+    }
+  }
+  return qosOverlay;
+}
+
+async function openPlayer() {
   playerSection?.classList.add('active');
   document.body.style.overflow = 'hidden';
-  // Play video if it's loaded
-  if (mainVideo) {
-    mainVideo.play().catch(() => {});
-  }
-});
 
-playerClose?.addEventListener('click', () => {
+  // Start QoS overlay
+  const qos = getQoS();
+  if (qos) qos.start(getStationIdx());
+
+  const player = getPlayer();
+  if (player) {
+    try {
+      await player.load();
+      await player.play();
+    } catch (err) {
+      console.error('[MSE] Failed to start playback:', err);
+      if (mainVideo?.src) {
+        mainVideo.play().catch(() => {});
+      }
+    }
+  }
+}
+
+function closePlayer() {
   playerSection?.classList.remove('active');
   document.body.style.overflow = '';
+  if (qosOverlay) {
+    qosOverlay.stop();
+  }
+  if (msePlayer) {
+    msePlayer.pause();
+    msePlayer.destroy();
+    msePlayer = null;
+  }
   if (mainVideo) {
     mainVideo.pause();
+    mainVideo.removeAttribute('src');
   }
-});
+}
+
+playBtn?.addEventListener('click', openPlayer);
+
+playerClose?.addEventListener('click', closePlayer);
 
 // Close player with Escape key
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && playerSection?.classList.contains('active')) {
-    playerSection.classList.remove('active');
-    document.body.style.overflow = '';
-    if (mainVideo) {
-      mainVideo.pause();
-    }
+    closePlayer();
   }
 });
 
@@ -101,12 +155,9 @@ document.querySelectorAll('.movie').forEach(card => {
   
   // Click to play
   card.addEventListener('click', () => {
-    // Get video URL from the card if available
     const video = card.querySelector('video');
     if (video) {
-      // If card has a video, show it in the player
-      playerSection?.classList.add('active');
-      document.body.style.overflow = 'hidden';
+      openPlayer();
     }
   });
 });

@@ -722,3 +722,98 @@ body.light .footer-social a {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* === QoS Overlay === */
+.qos-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(229, 9, 20, 0.4);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #00ff88;
+  z-index: 2010;
+  min-width: 200px;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.2s;
+  user-select: none;
+}
+
+.qos-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.qos-overlay .qos-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(229, 9, 20, 0.3);
+  padding-bottom: 4px;
+}
+
+.qos-overlay .qos-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  gap: 12px;
+}
+
+.qos-overlay .qos-label {
+  color: #808080;
+}
+
+.qos-overlay .qos-value {
+  color: #00ff88;
+  font-weight: bold;
+}
+
+.qos-overlay .qos-value.warn {
+  color: #ffaa00;
+}
+
+.qos-overlay .qos-value.error {
+  color: #ff4444;
+}
+
+.qos-overlay .qos-bar {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.qos-overlay .qos-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ff88, #00cc66);
+  transition: width 0.3s;
+  border-radius: 2px;
+}
+
+.qos-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #00ff88;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  cursor: pointer;
+  z-index: 2011;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.qos-toggle:hover {
+  background: rgba(229, 9, 20, 0.3);
+  border-color: var(--accent);
+}

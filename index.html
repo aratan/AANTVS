@@ -74,7 +74,7 @@
 
   <!-- Video Player (hidden by default) -->
   <section class="player-section" id="playerSection">
-    <div class="player-container">
+    <div class="player-container" id="playerContainer">
       <video id="video" controls preload="metadata" poster="{{.Nfoto}}"></video>
       <button class="player-close" id="playerClose">
         <i class="fas fa-times"></i>
@@ -196,6 +196,8 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://unpkg.com/ipfs/dist/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hlsjs-ipfs-loader@latest/dist/index.js"></script>
+  <script src="/api/mse-player.js"></script>
+  <script src="/api/qos.js"></script>
   <script src="/api/main.js"></script>
 
   <script>

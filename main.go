@@ -388,6 +388,39 @@ func hora() int {
 	return i
 }
 
+// --- QoS Handler ---
+
+// QoSMetrics holds P2P network quality metrics.
+type QoSMetrics struct {
+	Peers       int     `json:"peers"`
+	Seeds       int     `json:"seeds"`
+	P2PRatio    float64 `json:"p2p_ratio"`
+	SpeedBPS    int     `json:"speed_bps"`
+	BadPieces   int     `json:"bad_pieces"`
+	AvgLatency  float64 `json:"avg_latency_ms"`
+	BufferPct   float64 `json:"buffer_pct"`
+}
+
+// qosHandler returns current P2P swarm metrics as JSON.
+// Returns zero values when P2P is not active.
+func qosHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// TODO: Wire to actual SwarmCoordinator when P2P is active
+	// For now, return zero metrics indicating P2P is not connected
+	metrics := QoSMetrics{
+		Peers:      0,
+		Seeds:      0,
+		P2PRatio:   0,
+		SpeedBPS:   0,
+		BadPieces:  0,
+		AvgLatency: 0,
+		BufferPct:  0,
+	}
+
+	json.NewEncoder(w).Encode(metrics)
+}
+
 // --- Entry point ---
 
 func main() {
@@ -405,6 +438,7 @@ func main() {
 	mux.Handle("/api/", http.StripPrefix("/api/", http.FileServer(http.Dir("api"))))
 	mux.HandleFunc("/subir", uploadHandler)
 	mux.HandleFunc("/api", uploader)
+	mux.HandleFunc("/api/p2p/qos", qosHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
