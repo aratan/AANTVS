@@ -1,3 +1,3 @@
-module mod
+module aantvs
 
 go 1.21

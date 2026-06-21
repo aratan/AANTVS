@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -175,7 +176,7 @@ func (pm *PeerManager) DialPeer(id, addr string) {
 	)
 
 	backoff := minBackoff
-	interval := jitteredDuration(backoff)
+
 
 	for backoff <= maxBackoff {
 		conn, err := net.DialTimeout("tcp", addr, connectTimeout)
@@ -197,7 +198,6 @@ func (pm *PeerManager) DialPeer(id, addr string) {
 			if backoff > maxBackoff {
 				backoff = maxBackoff
 			}
-			interval = jitteredDuration(backoff)
 		case <-pm.ctx:
 			return
 		}
@@ -236,6 +236,16 @@ func (pm *PeerManager) HandlePeerMsg(msg PeerAnnounce, addr string) {
 		a := addr        // capture for goroutine
 		go pm.DialPeer(id, a)
 	}
+}
+
+// randHex returns n random hex characters.
+func randHex(n int) (string, error) {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", b), nil
 }
 
 // jitteredDuration applies jitter to make backoff less synchronized.

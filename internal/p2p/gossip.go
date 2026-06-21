@@ -307,10 +307,16 @@ func (sw *Swarm) RarestFirstStrategy() []Peer {
 	return sw.GetAlivePeers()
 }
 
+// StationInfo carries minimal metadata for gossip hashing.
+type StationInfo struct {
+	URL  string
+	Name string
+}
+
 // PublishIndexSnapshot creates an P2PPacket carrying the current movie index for gossip distribution.
 // This implements the "publish snapshot" pattern: data is serialized under no long-lived lock so
 // HTTP handlers aren't blocked.
-func (sw *Swarm) PublishIndexSnapshot(cards []MovieCard) P2PPacket {
+func (sw *Swarm) PublishIndexSnapshot(cards []StationInfo) P2PPacket {
 	hashes := make([]string, len(cards))
 	for i, c := range cards {
 		hashes[i] = c.URL + c.Name // placeholder — real SHA-256 in Phase B
