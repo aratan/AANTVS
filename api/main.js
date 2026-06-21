@@ -59,6 +59,7 @@ function getPlayer() {
 }
 
 function getStationIdx() {
+  // Extract station index from URL params or card data
   const params = new URLSearchParams(window.location.search);
   return parseInt(params.get('id') || '0', 10);
 }
@@ -88,6 +89,7 @@ async function openPlayer() {
       await player.play();
     } catch (err) {
       console.error('[MSE] Failed to start playback:', err);
+      // Fallback: try direct video src if available
       if (mainVideo?.src) {
         mainVideo.play().catch(() => {});
       }
@@ -157,6 +159,7 @@ document.querySelectorAll('.movie').forEach(card => {
   card.addEventListener('click', () => {
     const video = card.querySelector('video');
     if (video) {
+      // If card has a video, show it in the player
       openPlayer();
     }
   });
@@ -224,7 +227,13 @@ document.addEventListener('keydown', (e) => {
   // Space to play/pause
   if (e.code === 'Space' && playerSection?.classList.contains('active')) {
     e.preventDefault();
-    if (mainVideo?.paused) {
+    if (msePlayer) {
+      if (msePlayer.playing) {
+        msePlayer.pause();
+      } else {
+        msePlayer.play();
+      }
+    } else if (mainVideo?.paused) {
       mainVideo.play();
     } else {
       mainVideo?.pause();
