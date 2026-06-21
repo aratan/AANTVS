@@ -16,7 +16,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"aantvs/internal/p2p"
 )
 
 // Allowed extensions and their MIME types. Nil means not allowed.
@@ -90,6 +93,7 @@ var (
 	t              *template.Template
 	routeMatch     = regexp.MustCompile(`^\/(\w+)`)
 	peliculas      Peliculas
+	peliculasMu    sync.RWMutex // protects peliculas for concurrent P2P + HTTP access
 	initialPageData pageData // solo se escribe en startup, lectura concurrente segura
 )
 
@@ -147,6 +151,10 @@ func pelis(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateIdx(idx int) (pageData, bool) {
+	// RLock: read peliculas under read lock for concurrent P2P + HTTP safety
+	peliculasMu.RLock()
+	defer peliculasMu.RUnlock()
+
 	totalStations := len(peliculas.Groups[0].Stations)
 	if totalStations == 0 {
 		return pageData{}, false
@@ -339,6 +347,12 @@ func fetchJSON(client *http.Client) error {
 	// Sanitize JSON: some keys in the upstream API are missing opening quotes
 	body = jsonUnquoteKeys(body)
 
+	// LOCK ORDERING: acquire WriteLock before unmarshaling into peliculas.
+	// HTTP handlers read under RLock; P2P writes also use WriteLock.
+	// Convention: never hold both locks simultaneously.
+	peliculasMu.Lock()
+	defer peliculasMu.Unlock()
+
 	if err := json.Unmarshal(body, &peliculas); err != nil {
 		return fmt.Errorf("unmarshaling JSON: %w", err)
 	}
@@ -411,6 +425,13 @@ func main() {
 		port = "80"
 	}
 
+	// Start P2P swarm alongside HTTP (non-blocking, only if enabled in config)
+	p2pShutdown, err := p2p.StartP2P()
+	if err != nil {
+		log.Printf("P2P startup failed (HTTP continues): %v", err)
+	}
+	defer p2pShutdown()
+
 	server := &http.Server{
 		Addr:           ":" + port,
 		Handler:        mux,
@@ -420,5 +441,16 @@ func main() {
 	}
 
 	log.Println("Server Stream Active port: " + port + "\nVictor Manuel Arbiol Martinez 2020\nv1.1.2 Licencia: CC BY-NC-ND 3.0\nhttps://aratan.github.io/AANTV-Stream/")
-	log.Fatal(server.ListenAndServe())
+
+	// Run HTTP server in a goroutine so we can handle shutdown signals
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
+	// Block until SIGINT/SIGTERM, then gracefully shutdown
+	p2p.WaitForShutdown()
+	log.Println("shutting down HTTP server...")
+	server.Close()
 }
