@@ -31,7 +31,7 @@ type P2PConfig struct {
 }
 
 // DefaultConfig returns Config with sensible built-in defaults.
-func defaultConfig() Config {
+func DefaultConfig() Config {
 	return Config{
 		HTTP: HTTPConfig{
 			Port: 80,
@@ -53,14 +53,24 @@ func defaultConfig() Config {
 // LoadConfig reads ~/.aantvs/config.json and merges it over default values.
 // If the config file does not exist or cannot be parsed it falls back to defaults.
 func LoadConfig() (Config, error) {
-	cfg := defaultConfig()
+	return LoadConfigFrom("")
+}
 
-	configPath, err := configPath()
-	if err != nil {
-		return cfg, nil // fall through with defaults
+// LoadConfigFrom reads a specific config file path and merges it over defaults.
+// If path is empty, falls back to ~/.aantvs/config.json.
+func LoadConfigFrom(path string) (Config, error) {
+	cfg := DefaultConfig()
+
+	cfgPath := path
+	if cfgPath == "" {
+		var err error
+		cfgPath, err = configPath()
+		if err != nil {
+			return cfg, nil
+		}
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		// Config file absent or unreadable — use defaults.
 		return cfg, nil
