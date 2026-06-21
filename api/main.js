@@ -35,37 +35,71 @@ window.addEventListener('scroll', () => {
   lastScroll = currentScroll;
 });
 
-// === Video Player ===
+// === Video Player (MSE-enabled) ===
 const playBtn = document.getElementById('playBtn');
 const playerSection = document.getElementById('playerSection');
 const playerClose = document.getElementById('playerClose');
 const mainVideo = document.getElementById('video');
 
-playBtn?.addEventListener('click', () => {
+let msePlayer = null;
+
+function getPlayer() {
+  if (!msePlayer && mainVideo) {
+    msePlayer = new MSEPlayer(mainVideo, {
+      stationIdx: getStationIdx(),
+      baseUrl: '/api/chunk',
+    });
+  }
+  return msePlayer;
+}
+
+function getStationIdx() {
+  // Extract station index from URL params or card data
+  const params = new URLSearchParams(window.location.search);
+  return parseInt(params.get('id') || '0', 10);
+}
+
+async function openPlayer() {
   playerSection?.classList.add('active');
   document.body.style.overflow = 'hidden';
-  // Play video if it's loaded
-  if (mainVideo) {
-    mainVideo.play().catch(() => {});
-  }
-});
 
-playerClose?.addEventListener('click', () => {
+  const player = getPlayer();
+  if (player) {
+    try {
+      await player.load();
+      await player.play();
+    } catch (err) {
+      console.error('[MSE] Failed to start playback:', err);
+      // Fallback: try direct video src if available
+      if (mainVideo?.src) {
+        mainVideo.play().catch(() => {});
+      }
+    }
+  }
+}
+
+function closePlayer() {
   playerSection?.classList.remove('active');
   document.body.style.overflow = '';
+  if (msePlayer) {
+    msePlayer.pause();
+    msePlayer.destroy();
+    msePlayer = null;
+  }
   if (mainVideo) {
     mainVideo.pause();
+    mainVideo.removeAttribute('src');
   }
-});
+}
+
+playBtn?.addEventListener('click', openPlayer);
+
+playerClose?.addEventListener('click', closePlayer);
 
 // Close player with Escape key
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && playerSection?.classList.contains('active')) {
-    playerSection.classList.remove('active');
-    document.body.style.overflow = '';
-    if (mainVideo) {
-      mainVideo.pause();
-    }
+    closePlayer();
   }
 });
 
@@ -105,8 +139,7 @@ document.querySelectorAll('.movie').forEach(card => {
     const video = card.querySelector('video');
     if (video) {
       // If card has a video, show it in the player
-      playerSection?.classList.add('active');
-      document.body.style.overflow = 'hidden';
+      openPlayer();
     }
   });
 });
@@ -173,7 +206,13 @@ document.addEventListener('keydown', (e) => {
   // Space to play/pause
   if (e.code === 'Space' && playerSection?.classList.contains('active')) {
     e.preventDefault();
-    if (mainVideo?.paused) {
+    if (msePlayer) {
+      if (msePlayer.playing) {
+        msePlayer.pause();
+      } else {
+        msePlayer.play();
+      }
+    } else if (mainVideo?.paused) {
       mainVideo.play();
     } else {
       mainVideo?.pause();
