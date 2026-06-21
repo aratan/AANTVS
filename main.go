@@ -419,6 +419,6 @@ func main() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	log.Println("Server Stream Active port: " + port + "\nVictor Manuel Arbiol Martinez 2020\nv1.1.2 Licencia: CC BY-NC-ND 3.0\nhttps://aratan.github.io/AANTV-Stream/")
+	log.Println("Server Stream Active port: " + port + "\nAANTVS — Licencia: CC BY-NC-ND 3.0\nhttps://aratan.github.io/AANTV-Stream/")
 	log.Fatal(server.ListenAndServe())
 }
