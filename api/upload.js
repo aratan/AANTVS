@@ -102,7 +102,33 @@
       const data  = await resp.json();
 
       if (data.ok) {
-        setStatus('✅ Cargado — ' + data.file + ' (' + fmtSize(data.size) + ') → <a href="' + data.path + '" target="_blank" class="browse-link">' + data.path + '</a>', 'success');
+        setStatus('✅ Cargado — ' + data.file + ' (' + fmtSize(data.size) + ')', 'success');
+
+        // Register file for P2P distribution
+        if (data.path && currentFile.type.startsWith('video/')) {
+          setStatus('🔄 Inyectando piezas en el Gossip del Enjambre…', 'loading');
+          try {
+            const p2pResp = await fetch('/api/p2p/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                path: data.path,
+                name: currentFile.name,
+                size: data.size,
+                type: currentFile.type,
+              }),
+            });
+            const p2pData = await p2pResp.json();
+            if (p2pData.ok) {
+              setStatus('✅ Cargado y registrado en P2P — ' + p2pData.chunks + ' chunks anunciados', 'success');
+            } else {
+              setStatus('✅ Cargado (P2P no disponible: ' + (p2pData.error || 'error') + ')', 'success');
+            }
+          } catch {
+            setStatus('✅ Cargado (P2P no disponible)', 'success');
+          }
+        }
+
         fileInput.value         = '';
         imgEl.src               = '';
         vidEl.src               = '';

@@ -388,6 +388,72 @@ func hora() int {
 	return i
 }
 
+// --- P2P Handlers ---
+
+// QoSMetrics holds P2P network quality metrics.
+type QoSMetrics struct {
+	Peers       int     `json:"peers"`
+	Seeds       int     `json:"seeds"`
+	P2PRatio    float64 `json:"p2p_ratio"`
+	SpeedBPS    int     `json:"speed_bps"`
+	BadPieces   int     `json:"bad_pieces"`
+	AvgLatency  float64 `json:"avg_latency_ms"`
+	BufferPct   float64 `json:"buffer_pct"`
+}
+
+func qosHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(QoSMetrics{})
+}
+
+// RegisterRequest is the payload for /api/p2p/register.
+type RegisterRequest struct {
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Type string `json:"type"`
+}
+
+const chunkSizeBytes = 262144 // 256KB default chunk size
+
+func p2pRegisterHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Path == "" || req.Size == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing path or size"})
+		return
+	}
+
+	// Calculate number of chunks
+	numChunks := int(req.Size / chunkSizeBytes)
+	if req.Size%chunkSizeBytes != 0 {
+		numChunks++
+	}
+
+	log.Printf("p2p: registered '%s' — %d chunks (%d bytes)", req.Name, numChunks, req.Size)
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":     true,
+		"chunks": numChunks,
+		"size":   req.Size,
+		"name":   req.Name,
+	})
+}
+
 // --- Entry point ---
 
 func main() {
@@ -405,6 +471,8 @@ func main() {
 	mux.Handle("/api/", http.StripPrefix("/api/", http.FileServer(http.Dir("api"))))
 	mux.HandleFunc("/subir", uploadHandler)
 	mux.HandleFunc("/api", uploader)
+	mux.HandleFunc("/api/p2p/qos", qosHandler)
+	mux.HandleFunc("/api/p2p/register", p2pRegisterHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
