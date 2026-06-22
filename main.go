@@ -12,11 +12,15 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+
+	"aantvs/internal/p2p"
 )
 
 // Allowed extensions and their MIME types. Nil means not allowed.
@@ -91,6 +95,7 @@ var (
 	routeMatch     = regexp.MustCompile(`^\/(\w+)`)
 	peliculas      Peliculas
 	initialPageData pageData // solo se escribe en startup, lectura concurrente segura
+	p2pSwarm       *p2p.Swarm // reference to P2P swarm for handlers
 )
 
 // --- Inicialización ---
@@ -402,20 +407,31 @@ type QoSMetrics struct {
 }
 
 // qosHandler returns current P2P swarm metrics as JSON.
-// Returns zero values when P2P is not active.
+// Returns real data when P2P is active, zero values when not.
 func qosHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// TODO: Wire to actual SwarmCoordinator when P2P is active
-	// For now, return zero metrics indicating P2P is not connected
-	metrics := QoSMetrics{
-		Peers:      0,
-		Seeds:      0,
-		P2PRatio:   0,
-		SpeedBPS:   0,
-		BadPieces:  0,
-		AvgLatency: 0,
-		BufferPct:  0,
+	metrics := QoSMetrics{}
+
+	if p2pSwarm != nil {
+		// Get real peer count from swarm
+		alivePeers := p2pSwarm.GetAlivePeers()
+		metrics.Peers = len(alivePeers)
+
+		// Calculate bad pieces from reputation stats
+		if stats := p2pSwarm.GetReputationStats(); stats != nil {
+			for _, s := range stats {
+				metrics.BadPieces += s.BadChunks
+				metrics.AvgLatency += s.AvgLatency
+				if s.TotalChunks > 0 {
+					metrics.BufferPct += float64(s.TotalChunks-s.BadChunks) / float64(s.TotalChunks) * 100
+				}
+			}
+			if len(stats) > 0 {
+				metrics.AvgLatency /= float64(len(stats))
+				metrics.BufferPct /= float64(len(stats))
+			}
+		}
 	}
 
 	json.NewEncoder(w).Encode(metrics)
@@ -528,10 +544,73 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Chunk-Mode", req.Mode)
 	w.Header().Set("X-Chunk-Size", fmt.Sprintf("%d", req.Size))
 
-	// TODO: Serve actual video chunks from P2P swarm or local disk
-	// For now, return empty chunk (placeholder)
 	log.Printf("p2p: stream — station=%d chunk=%d mode=%s size=%d", req.StationIdx, req.ChunkIdx, req.Mode, req.Size)
-	w.WriteHeader(http.StatusOK)
+
+	// Serve real video file from api directory
+	entries, err := os.ReadDir("api")
+	if err != nil || len(entries) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Find the file at the requested index
+	fileIdx := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if _, allowed := extAllowed[ext]; !allowed {
+			continue
+		}
+		if fileIdx == req.StationIdx {
+			// Serve the file
+			filePath := filepath.Join("api", name)
+			f, err := os.Open(filePath)
+			if err != nil {
+				log.Printf("p2p: stream error opening %s: %v", filePath, err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			defer f.Close()
+
+			// Calculate offset for chunk
+			offset := int64(req.ChunkIdx * req.Size)
+			if offset >= info.Size() {
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+
+			// Seek to chunk position
+			if _, err := f.Seek(offset, io.SeekStart); err != nil {
+				log.Printf("p2p: stream seek error: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			// Read chunk
+			buf := make([]byte, req.Size)
+			n, err := io.ReadFull(f, buf)
+			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+				log.Printf("p2p: stream read error: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", n))
+			w.Write(buf[:n])
+			return
+		}
+		fileIdx++
+	}
+
+	// Station index not found
+	w.WriteHeader(http.StatusNotFound)
 }
 
 // InventoryItem represents a catalog entry with rareness data.
@@ -553,11 +632,49 @@ func inventoryHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscanf(mp, "%d", &minPeers)
 	}
 
-	// TODO: Build inventory from actual P2P swarm data
-	// For now, return empty inventory
 	items := make([]InventoryItem, 0)
-	_ = filter
-	_ = minPeers
+
+	if p2pSwarm != nil {
+		// Build inventory from local API directory files
+		entries, err := os.ReadDir("api")
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				info, err := entry.Info()
+				if err != nil {
+					continue
+				}
+				name := entry.Name()
+				ext := strings.ToLower(filepath.Ext(name))
+				if _, allowed := extAllowed[ext]; !allowed {
+					continue
+				}
+				if filter != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
+					continue
+				}
+				item := InventoryItem{
+					Name: name,
+					Path: "/api/" + name,
+					Size: info.Size(),
+					Type: extAllowed[ext],
+				}
+				// Count peers that have this chunk (simplified for now)
+				item.Peers = len(p2pSwarm.GetAlivePeers())
+				if item.Peers >= 3 {
+					item.Rareness = "low"
+				} else if item.Peers >= 1 {
+					item.Rareness = "medium"
+				} else {
+					item.Rareness = "high"
+				}
+				if item.Peers >= minPeers {
+					items = append(items, item)
+				}
+			}
+		}
+	}
 
 	json.NewEncoder(w).Encode(map[string]any{
 		"ok":    true,
@@ -602,6 +719,30 @@ func main() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
+	// Start P2P module
+	shutdownP2P, swarm, err := p2p.StartP2P()
+	if err != nil {
+		log.Printf("p2p: failed to start: %v", err)
+	} else {
+		p2pSwarm = swarm
+		defer shutdownP2P()
+	}
+
+	// Signal handling for graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		log.Printf("received signal %v, shutting down...", sig)
+		if shutdownP2P != nil {
+			shutdownP2P()
+		}
+		server.Close()
+	}()
+
 	log.Println("Server Stream Active port: " + port + "\nAANTVS — Licencia: CC BY-NC-ND 3.0\nhttps://aratan.github.io/AANTV-Stream/")
-	log.Fatal(server.ListenAndServe())
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }

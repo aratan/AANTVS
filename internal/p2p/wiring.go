@@ -11,9 +11,10 @@ import (
 )
 
 // StartP2P loads config, creates a Swarm, and starts gossip if enabled.
-// Returns a shutdown function that should be called on process exit.
-// If P2P is disabled in config, returns a no-op shutdown and nil error.
-func StartP2P() (shutdown func(), err error) {
+// Returns a shutdown function that should be called on process exit,
+// and a reference to the swarm for handler access.
+// If P2P is disabled in config, returns a no-op shutdown, nil swarm, and nil error.
+func StartP2P() (shutdown func(), swarm *Swarm, err error) {
 	// No-op shutdown for when P2P is disabled
 	noOp := func() {}
 
@@ -24,16 +25,16 @@ func StartP2P() (shutdown func(), err error) {
 
 	if !cfg.P2P.Enabled {
 		log.Println("p2p: disabled in config (p2p.enabled=false)")
-		return noOp, nil
+		return noOp, nil, nil
 	}
 
-	swarm, err := NewSwarm(cfg)
+	swarm, err = NewSwarm(cfg)
 	if err != nil {
-		return noOp, fmt.Errorf("p2p: create swarm: %w", err)
+		return noOp, nil, fmt.Errorf("p2p: create swarm: %w", err)
 	}
 
 	if err := swarm.Start(); err != nil {
-		return noOp, fmt.Errorf("p2p: start swarm: %w", err)
+		return noOp, nil, fmt.Errorf("p2p: start swarm: %w", err)
 	}
 
 	log.Printf("p2p: swarm started (mcast=%s, peers=%d)", cfg.McastAddr, len(cfg.SeedPeers))
@@ -46,7 +47,7 @@ func StartP2P() (shutdown func(), err error) {
 		log.Println("p2p: shutting down swarm...")
 		cancel()
 		swarm.Stop()
-	}, nil
+	}, swarm, nil
 }
 
 // WaitForShutdown blocks until SIGINT/SIGTERM is received, then returns.

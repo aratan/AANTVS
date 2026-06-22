@@ -304,6 +304,11 @@ func (sw *Swarm) GetAlivePeers() []Peer {
 	return result
 }
 
+// GetReputationStats returns reputation statistics for all tracked peers.
+func (sw *Swarm) GetReputationStats() []PeerReputationStats {
+	return sw.reputation.GetStats()
+}
+
 // RarestFirstStrategy picks peers that hold the least common chunks across the swarm.
 // For Phase A this is a simple "all alive peers" since we haven't built full rareness calc yet.
 func (sw *Swarm) RarestFirstStrategy() []Peer {
