@@ -70,6 +70,9 @@ type Swarm struct {
 	// Rarest-first tracking across swarm peers.
 	chunkPresenceMu   sync.RWMutex
 	stationChunks     map[string]map[int]bool // for rareness calc: station -> {hasChunk: set{idx}}
+
+	// PR #23: Peer reputation tracking
+	reputation        *ReputationManager
 }
 
 const defaultHeartbeatInterval = 5 * time.Second
@@ -91,6 +94,7 @@ func NewSwarm(cfg Config) (*Swarm, error) {
 		chunkPresenceMu: sync.RWMutex{},
 		stationChunks:  make(map[string]map[int]bool),
 		rarityTracker:  make(map[string]map[string]int),
+		reputation:    NewReputationManager(),
 	}
 	return s, nil
 }
