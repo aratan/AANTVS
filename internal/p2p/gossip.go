@@ -65,6 +65,7 @@ type Swarm struct {
 	config            Config
 	peerMgr           *PeerManager
 	stopCh            chan struct{}
+	stopOnce          sync.Once         // prevents double-close of stopCh
 	rarityTracker     map[string]map[string]int // stationURL -> {chunkIdx -> countAcrossPeers}
 
 	// Rarest-first tracking across swarm peers.
@@ -343,10 +344,13 @@ func (sw *Swarm) PublishIndexSnapshot(cards []StationInfo) P2PPacket {
 }
 
 // Stop cleanly shuts down the swarm.
+// Safe to call multiple times.
 func (sw *Swarm) Stop() {
-	close(sw.stopCh)
-	sw.peerMgr.Stop()
-	log.Println("p2p: swarm stopped")
+	sw.stopOnce.Do(func() {
+		close(sw.stopCh)
+		sw.peerMgr.Stop()
+		log.Println("p2p: swarm stopped")
+	})
 }
 
 // marshaled helper serializes a value to JSON or returns nil.
