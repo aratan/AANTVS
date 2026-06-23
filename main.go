@@ -414,9 +414,8 @@ func qosHandler(w http.ResponseWriter, r *http.Request) {
 	metrics := QoSMetrics{}
 
 	if p2pSwarm != nil {
-		// Get real peer count from swarm
-		alivePeers := p2pSwarm.GetAlivePeers()
-		metrics.Peers = len(alivePeers)
+		// Get real peer count from libp2p
+		metrics.Peers = p2pSwarm.GetLibp2pPeerCount()
 
 		// Calculate bad pieces from reputation stats
 		if stats := p2pSwarm.GetReputationStats(); stats != nil {
@@ -613,73 +612,67 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 }
 
-// InventoryItem represents a catalog entry with rareness data.
-type InventoryItem struct {
-	Name      string  `json:"name"`
-	Path      string  `json:"path"`
-	Size      int64   `json:"size"`
-	Type      string  `json:"type"`
-	Peers     int     `json:"peers"`
-	Rareness  string  `json:"rareness"` // "high", "medium", "low"
-}
-
 func inventoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Build local inventory
+	localItems := make([]p2p.InventoryItem, 0)
+	entries, err := os.ReadDir("api")
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			name := entry.Name()
+			ext := strings.ToLower(filepath.Ext(name))
+			if _, allowed := extAllowed[ext]; !allowed {
+				continue
+			}
+			localItems = append(localItems, p2p.InventoryItem{
+				Name: name,
+				Path: "/api/" + name,
+				Size: info.Size(),
+				Type: extAllowed[ext],
+			})
+		}
+	}
+
+	// Get combined inventory from swarm
+	items := localItems
+	if p2pSwarm != nil {
+		items = p2pSwarm.GetCombinedInventory(localItems)
+	}
+
+	// Apply filters
 	filter := r.URL.Query().Get("filter")
 	minPeers := 0
 	if mp := r.URL.Query().Get("min_peers"); mp != "" {
 		fmt.Sscanf(mp, "%d", &minPeers)
 	}
 
-	items := make([]InventoryItem, 0)
-
-	if p2pSwarm != nil {
-		// Build inventory from local API directory files
-		entries, err := os.ReadDir("api")
-		if err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-				info, err := entry.Info()
-				if err != nil {
-					continue
-				}
-				name := entry.Name()
-				ext := strings.ToLower(filepath.Ext(name))
-				if _, allowed := extAllowed[ext]; !allowed {
-					continue
-				}
-				if filter != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
-					continue
-				}
-				item := InventoryItem{
-					Name: name,
-					Path: "/api/" + name,
-					Size: info.Size(),
-					Type: extAllowed[ext],
-				}
-				// Count peers that have this chunk (simplified for now)
-				item.Peers = len(p2pSwarm.GetAlivePeers())
-				if item.Peers >= 3 {
-					item.Rareness = "low"
-				} else if item.Peers >= 1 {
-					item.Rareness = "medium"
-				} else {
-					item.Rareness = "high"
-				}
-				if item.Peers >= minPeers {
-					items = append(items, item)
-				}
-			}
+	filtered := make([]p2p.InventoryItem, 0)
+	for _, item := range items {
+		if filter != "" && !strings.Contains(strings.ToLower(item.Name), strings.ToLower(filter)) {
+			continue
+		}
+		// For now, count how many peers have this item (simplified)
+		peerCount := 1 // local peer
+		if p2pSwarm != nil {
+			peerCount += len(p2pSwarm.GetAlivePeers())
+		}
+		if peerCount >= minPeers {
+			filtered = append(filtered, item)
 		}
 	}
 
 	json.NewEncoder(w).Encode(map[string]any{
 		"ok":    true,
-		"items": items,
-		"total": len(items),
+		"items": filtered,
+		"total": len(filtered),
 	})
 }
 

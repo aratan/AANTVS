@@ -1,12 +1,14 @@
 package p2p
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"sync"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 // PacketType identifies the kind of gossipPayload carried by a P2PPacket.
@@ -29,9 +31,10 @@ type P2PPacket struct {
 
 // IndexPayload carries gossip metadata about this node's movie index.
 type IndexPayload struct {
-	TotalStations int         `json:"total_stations"`
-	StationHashes []string    `json:"station_hashes"` // SHA-256(URL + Title) per station, for rareness calc
-	Timestamp     int64       `json:"ts"`
+	TotalStations int            `json:"total_stations"`
+	StationHashes []string       `json:"station_hashes"` // SHA-256(URL + Title) per station, for rareness calc
+	Items         []InventoryItem `json:"items"`
+	Timestamp     int64          `json:"ts"`
 }
 
 // ChunkRequestPayload describes a peer's request to fetch chunks (segments) of a station.
@@ -58,6 +61,15 @@ type HeartbeatPayload struct {
 	Timestamp     int64  `json:"ts"`
 }
 
+// InventoryItem represents a catalog entry with metadata for P2P inventory broadcast.
+type InventoryItem struct {
+	PeerID   string `json:"peer_id"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Type     string `json:"type"`
+}
+
 // Swarm manages discovered peers and drives the gossip heartbeat loop.
 type Swarm struct {
 	mu                sync.RWMutex      // guards peers map
@@ -74,6 +86,13 @@ type Swarm struct {
 
 	// PR #23: Peer reputation tracking
 	reputation        *ReputationManager
+
+	// Remote inventories from other peers
+	remoteInventories map[string][]InventoryItem // peerID -> items
+	inventoryMu       sync.RWMutex
+
+	// libp2p host for discovery and communication
+	libp2pHost        *Libp2pHost
 }
 
 const defaultHeartbeatInterval = 5 * time.Second
@@ -88,161 +107,109 @@ func NewSwarm(cfg Config) (*Swarm, error) {
 	}
 
 	s := &Swarm{
-		config:        cfg,
-		peers:         make(map[string]*Peer),
-		peerMgr:       NewPeerManager("aantvs-"+uid, "0.1.0"),
-		stopCh:        make(chan struct{}),
-		chunkPresenceMu: sync.RWMutex{},
-		stationChunks:  make(map[string]map[int]bool),
-		rarityTracker:  make(map[string]map[string]int),
-		reputation:    NewReputationManager(),
+		config:            cfg,
+		peers:             make(map[string]*Peer),
+		peerMgr:           NewPeerManager("aantvs-"+uid, "0.1.0"),
+		stopCh:            make(chan struct{}),
+		chunkPresenceMu:   sync.RWMutex{},
+		stationChunks:     make(map[string]map[int]bool),
+		rarityTracker:     make(map[string]map[string]int),
+		reputation:        NewReputationManager(),
+		remoteInventories: make(map[string][]InventoryItem),
 	}
 	return s, nil
 }
 
-// Start opens UDP multicast on the configured McastAddr and begins gossip.
+// Start creates a libp2p host and begins peer discovery.
 func (sw *Swarm) Start() error {
-	addr, err := net.ResolveUDPAddr("udp4", sw.config.McastAddr)
+	// Create libp2p host
+	host, err := NewLibp2pHost(sw.config)
 	if err != nil {
-		return fmt.Errorf("resolve mcast addr %s: %w", sw.config.McastAddr, err)
+		return fmt.Errorf("create libp2p host: %w", err)
+	}
+	sw.libp2pHost = host
+
+	// Connect to seed peers
+	for _, seed := range sw.config.SeedPeers {
+		if err := sw.libp2pHost.ConnectToPeer(seed); err != nil {
+			log.Printf("libp2p: connect to seed %s failed: %v", seed, err)
+		}
 	}
 
-	conn, err := net.ListenMulticastUDP("udp4", nil, addr)
-	if err != nil {
-		return fmt.Errorf("listen mcast %s: %w", sw.config.McastAddr, err)
-	}
-	log.Printf("p2p: multicast listening on %s (TTL=%d)", conn.LocalAddr(), mcastTTL)
+	// Start periodic inventory broadcast via libp2p
+	go sw.broadcastInventoryLoop()
 
-	go sw.readLoop(conn)
-	go sw.broadcastLoop()
+	// Start heartbeat broadcast via libp2p
+	go sw.broadcastHeartbeatLoop()
+
+	log.Printf("libp2p: swarm started with %d seed peers", len(sw.config.SeedPeers))
 	return nil
 }
 
-// readLoop receives P2PPacket messages from multicast and dispatches them.
-func (sw *Swarm) readLoop(conn *net.UDPConn) {
-	buf := make([]byte, 65536)
+// broadcastInventoryLoop periodically broadcasts local inventory to all peers.
+func (sw *Swarm) broadcastInventoryLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
+		case <-ticker.C:
+			items := buildLocalInventory()
+			sw.broadcastInventoryViaLibp2p(items)
 		case <-sw.stopCh:
-			conn.Close()
 			return
-		default:
 		}
+	}
+}
 
-		n, raddr, err := conn.ReadFromUDP(buf)
+// broadcastInventoryViaLibp2p sends inventory to all connected peers via libp2p streams.
+func (sw *Swarm) broadcastInventoryViaLibp2p(items []InventoryItem) {
+	if sw.libp2pHost == nil {
+		return
+	}
+
+	pkt := sw.PublishIndexSnapshot(nil, items)
+
+	// Send inventory to all connected peers
+	for _, peerID := range sw.libp2pHost.GetPeers() {
+		s, err := sw.libp2pHost.NewStream(context.Background(), peerID, protocol.ID(ProtocolInventory))
 		if err != nil {
-			select {
-			case <-sw.stopCh:
-				return
-			default:
-				log.Printf("p2p: mcast read error: %v", err)
-				time.Sleep(time.Second)
-				continue
-			}
-		}
-
-		var pkt P2PPacket
-		if err := json.Unmarshal(buf[:n], &pkt); err != nil {
-			log.Printf("p2p: unmarshal packet from %s: %v", raddr, err)
 			continue
 		}
 
-		switch pkt.Type {
-		case PktHeartbeat:
-			sw.handleHeartbeat(pkt.Payload, raddr.String())
-		case PktIndexUpdate:
-			sw.handleIndexUpdate(pkt.Payload)
-		default:
-			log.Printf("p2p: unknown packet type %d from %s", pkt.Type, raddr)
+		// Encode and send inventory
+		if err := json.NewEncoder(s).Encode(pkt); err != nil {
+			s.Close()
+			continue
 		}
+		s.Close()
 	}
+	log.Printf("libp2p: broadcast inventory (%d items) to %d peers", len(items), len(sw.libp2pHost.GetPeers()))
 }
 
-// handleHeartbeat validates a heartbeat and registers the sender as new peer when appropriate.
-func (sw *Swarm) handleHeartbeat(raw json.RawMessage, raddr string) {
-	var hb HeartbeatPayload
-	if err := json.Unmarshal(raw, &hb); err != nil {
-		return
-	}
-
-	if hb.PeerID == "" || hb.P2PPort == 0 {
-		return // malformed
-	}
-
-	sw.mu.Lock()
-	defer sw.mu.Unlock()
-
-	existing, ok := sw.peers[hb.PeerID]
-	if !ok {
-		sw.peers[hb.PeerID] = &Peer{
-			ID:     hb.PeerID,
-			Addr:   fmt.Sprintf("%s:%d", raddr, hb.P2PPort),
-			LastSeen: time.Now(),
-			Alive:  true,
-		}
-		log.Printf("p2p: discovered peer %s at %s (http:%d p2p:%d)", hb.PeerID, raddr, hb.HTTPPort, hb.P2PPort)
-
-		// Kick off TCP dial to newly found peer.
-		pw := hb.PeerID // capture for goroutine
-		pa := fmt.Sprintf("%s:%d", raddr, hb.P2PPort)
-		go sw.peerMgr.DialPeer(pw, pa)
-	} else {
-		existing.LastSeen = time.Now()
-		existing.Alive = true
-	}
-}
-
-// handleIndexUpdate processes index gossip carrying a peer's full movie index.
-func (sw *Swarm) handleIndexUpdate(raw json.RawMessage) {
-	var idx IndexPayload
-	if err := json.Unmarshal(raw, &idx); err != nil {
-		log.Printf("p2p: unmarshal index update: %v", err)
-		return
-	}
-
-	sw.chunkPresenceMu.Lock()
-	for _, stationHash := range idx.StationHashes {
-		if sw.stationChunks[stationHash] == nil {
-			sw.stationChunks[stationHash] = make(map[int]bool)
-		}
-	}
-	sw.chunkPresenceMu.Unlock()
-
-	log.Printf("p2p: index update received (stations=%d)", idx.TotalStations)
-}
-
-// broadcastLoop periodically sends heartbeat packets on multicast.
-func (sw *Swarm) broadcastLoop() {
+// broadcastHeartbeatLoop periodically sends heartbeats via libp2p.
+func (sw *Swarm) broadcastHeartbeatLoop() {
 	ticker := time.NewTicker(defaultHeartbeatInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			sw.sendHeartbeat()
+			sw.sendHeartbeatViaLibp2p()
 		case <-sw.stopCh:
 			return
 		}
 	}
 }
 
-// sendHeartbeat marshals a heartbeat and floods it onto the multicast group.
-func (sw *Swarm) sendHeartbeat() {
-	addr, err := net.ResolveUDPAddr("udp4", sw.config.McastAddr)
-	if err != nil {
+// sendHeartbeatViaLibp2p sends a heartbeat to all connected peers via libp2p streams.
+func (sw *Swarm) sendHeartbeatViaLibp2p() {
+	if sw.libp2pHost == nil {
 		return
 	}
-
-	conn, err := net.DialUDP("udp4", nil, addr)
-	if err != nil {
-		log.Printf("p2p: connect to mcast group: %v", err)
-		return
-	}
-	defer conn.Close()
 
 	payload := HeartbeatPayload{
 		PeerID:    sw.peerMgr.peerID,
-		McastAddr: sw.config.McastAddr,
 		HTTPPort:  sw.config.HTTP.Port,
 		P2PPort:   sw.config.P2PPort,
 		Timestamp: time.Now().UnixMilli(),
@@ -255,13 +222,18 @@ func (sw *Swarm) sendHeartbeat() {
 		Payload: marshaled(payload),
 	}
 
-	data, err := json.Marshal(pkt)
-	if err != nil {
-		return
-	}
+	// Send heartbeat to all connected peers
+	for _, peerID := range sw.libp2pHost.GetPeers() {
+		s, err := sw.libp2pHost.NewStream(context.Background(), peerID, protocol.ID(ProtocolHeartbeat))
+		if err != nil {
+			continue
+		}
 
-	if _, err := conn.Write(data); err != nil {
-		log.Printf("p2p: mcast heartbeat write: %v", err)
+		if err := json.NewEncoder(s).Encode(pkt); err != nil {
+			s.Close()
+			continue
+		}
+		s.Close()
 	}
 }
 
@@ -305,6 +277,14 @@ func (sw *Swarm) GetAlivePeers() []Peer {
 	return result
 }
 
+// GetLibp2pPeerCount returns the number of connected libp2p peers.
+func (sw *Swarm) GetLibp2pPeerCount() int {
+	if sw.libp2pHost == nil {
+		return 0
+	}
+	return len(sw.libp2pHost.GetPeers())
+}
+
 // GetReputationStats returns reputation statistics for all tracked peers.
 func (sw *Swarm) GetReputationStats() []PeerReputationStats {
 	return sw.reputation.GetStats()
@@ -326,7 +306,7 @@ type StationInfo struct {
 // PublishIndexSnapshot creates an P2PPacket carrying the current movie index for gossip distribution.
 // This implements the "publish snapshot" pattern: data is serialized under no long-lived lock so
 // HTTP handlers aren't blocked.
-func (sw *Swarm) PublishIndexSnapshot(cards []StationInfo) P2PPacket {
+func (sw *Swarm) PublishIndexSnapshot(cards []StationInfo, items []InventoryItem) P2PPacket {
 	hashes := make([]string, len(cards))
 	for i, c := range cards {
 		hashes[i] = c.URL + c.Name // placeholder — real SHA-256 in Phase B
@@ -338,9 +318,35 @@ func (sw *Swarm) PublishIndexSnapshot(cards []StationInfo) P2PPacket {
 		Payload: marshaled(IndexPayload{
 			TotalStations: len(cards),
 			StationHashes: hashes,
+			Items:         items,
 			Timestamp:     time.Now().UnixMilli(),
 		}),
 	}
+}
+
+// GetCombinedInventory returns local items merged with all remote inventories.
+func (sw *Swarm) GetCombinedInventory(localItems []InventoryItem) []InventoryItem {
+	combined := make([]InventoryItem, 0, len(localItems))
+
+	// Add local items
+	combined = append(combined, localItems...)
+
+	// Add remote items
+	sw.inventoryMu.RLock()
+	for peerID, items := range sw.remoteInventories {
+		for _, item := range items {
+			item.PeerID = peerID
+			combined = append(combined, item)
+		}
+	}
+	sw.inventoryMu.RUnlock()
+
+	return combined
+}
+
+// BroadcastInventory sends the local inventory to all peers via libp2p.
+func (sw *Swarm) BroadcastInventory(items []InventoryItem) {
+	sw.broadcastInventoryViaLibp2p(items)
 }
 
 // Stop cleanly shuts down the swarm.
@@ -349,6 +355,9 @@ func (sw *Swarm) Stop() {
 	sw.stopOnce.Do(func() {
 		close(sw.stopCh)
 		sw.peerMgr.Stop()
+		if sw.libp2pHost != nil {
+			sw.libp2pHost.Close()
+		}
 		log.Println("p2p: swarm stopped")
 	})
 }

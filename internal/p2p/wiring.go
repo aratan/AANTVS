@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -37,8 +39,6 @@ func StartP2P() (shutdown func(), swarm *Swarm, err error) {
 		return noOp, nil, fmt.Errorf("p2p: start swarm: %w", err)
 	}
 
-	log.Printf("p2p: swarm started (mcast=%s, peers=%d)", cfg.McastAddr, len(cfg.SeedPeers))
-
 	// Return a shutdown function that stops the swarm gracefully
 	ctx, cancel := context.WithCancel(context.Background())
 	_ = ctx // used for future peer lifecycle management
@@ -48,6 +48,52 @@ func StartP2P() (shutdown func(), swarm *Swarm, err error) {
 		cancel()
 		swarm.Stop()
 	}, swarm, nil
+}
+
+// Allowed extensions for inventory items
+var inventoryExtAllowed = map[string]string{
+	".mp4":  "video/mp4",
+	".webm": "video/webm",
+	".ogg":  "video/ogg",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".txt":  "text/plain",
+	".pdf":  "application/pdf",
+}
+
+// buildLocalInventory scans the api/ directory and returns inventory items for local files.
+func buildLocalInventory() []InventoryItem {
+	items := make([]InventoryItem, 0)
+	entries, err := os.ReadDir("api")
+	if err != nil {
+		return items
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if _, allowed := inventoryExtAllowed[ext]; !allowed {
+			continue
+		}
+		items = append(items, InventoryItem{
+			Name: name,
+			Path: "/api/" + name,
+			Size: info.Size(),
+			Type: inventoryExtAllowed[ext],
+		})
+	}
+	return items
 }
 
 // WaitForShutdown blocks until SIGINT/SIGTERM is received, then returns.

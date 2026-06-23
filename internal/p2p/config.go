@@ -8,12 +8,12 @@ import (
 
 // Config holds P2P and HTTP server configuration loaded from ~/.aantvs/config.json
 type Config struct {
-	HTTP       HTTPConfig   `json:"http"`
-	P2P        P2PConfig    `json:"p2p"`
-	P2PPort    int          `json:"p2p_port"`
-	McastAddr  string       `json:"mcast_addr"`
-	SeedPeers  []string     `json:"seed_peers"`
-	StunServers []string    `json:"stun_servers"`
+	HTTP        HTTPConfig    `json:"http"`
+	P2P         P2PConfig     `json:"p2p"`
+	P2PPort     int           `json:"p2p_port"`
+	SeedPeers   []string      `json:"seed_peers"`   // libp2p multiaddrs
+	StunServers []string      `json:"stun_servers"`
+	McastAddr   string        `json:"mcast_addr"`   // deprecated: kept for config compatibility
 }
 
 // HTTPConfig holds the HTTP server port configuration.
@@ -23,7 +23,11 @@ type HTTPConfig struct {
 
 // P2PConfig holds additional P2P overlay settings.
 type P2PConfig struct {
-	Enabled           bool `json:"enabled"`
+	Enabled           bool     `json:"enabled"`
+	DiscoveryMode     string   `json:"discovery_mode"`     // "mdns", "dht", "both"
+	ListenAddr        string   `json:"listen_addr"`        // e.g., "/ip4/0.0.0.0/tcp/0"
+	BootstrapPeers    []string `json:"bootstrap_peers"`     // DHT bootstrap peers
+	// Legacy fields kept for config compatibility
 	MulticastGroup    string `json:"multicast_group,omitempty"`
 	MulticastPort     int    `json:"multicast_port,omitempty"`
 	HeartbeatInterval int    `json:"heartbeat_interval_ms,omitempty"`
@@ -38,13 +42,14 @@ func DefaultConfig() Config {
 		},
 		P2P: P2PConfig{
 			Enabled:           true,
+			DiscoveryMode:     "mdns",
+			ListenAddr:        "/ip4/0.0.0.0/tcp/0",
 			MulticastGroup:    "239.0.0.1",
 			MulticastPort:     5432,
 			HeartbeatInterval: 250,
 			TTL:               4,
 		},
 		P2PPort:     8080,
-		McastAddr:   "239.0.0.1:5432",
 		SeedPeers:   []string{},
 		StunServers: []string{},
 	}
@@ -88,6 +93,15 @@ func LoadConfigFrom(path string) (Config, error) {
 	}
 	if fileCfg.P2P.Enabled {
 		cfg.P2P.Enabled = fileCfg.P2P.Enabled
+	}
+	if fileCfg.P2P.DiscoveryMode != "" {
+		cfg.P2P.DiscoveryMode = fileCfg.P2P.DiscoveryMode
+	}
+	if fileCfg.P2P.ListenAddr != "" {
+		cfg.P2P.ListenAddr = fileCfg.P2P.ListenAddr
+	}
+	if len(fileCfg.P2P.BootstrapPeers) > 0 {
+		cfg.P2P.BootstrapPeers = fileCfg.P2P.BootstrapPeers
 	}
 	if fileCfg.P2P.MulticastGroup != "" {
 		cfg.P2P.MulticastGroup = fileCfg.P2P.MulticastGroup
