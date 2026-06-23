@@ -129,6 +129,13 @@ func (sw *Swarm) Start() error {
 	}
 	sw.libp2pHost = host
 
+	// Wire inventory callback so received inventories are stored
+	sw.libp2pHost.onInventory = func(peerID string, items []InventoryItem) {
+		sw.inventoryMu.Lock()
+		sw.remoteInventories[peerID] = items
+		sw.inventoryMu.Unlock()
+	}
+
 	// Connect to seed peers
 	for _, seed := range sw.config.SeedPeers {
 		if err := sw.libp2pHost.ConnectToPeer(seed); err != nil {
@@ -141,6 +148,9 @@ func (sw *Swarm) Start() error {
 
 	// Start heartbeat broadcast via libp2p
 	go sw.broadcastHeartbeatLoop()
+
+	// Start periodic reputation score decay
+	go sw.decayScoresLoop()
 
 	log.Printf("libp2p: swarm started with %d seed peers", len(sw.config.SeedPeers))
 	return nil
@@ -202,6 +212,21 @@ func (sw *Swarm) broadcastHeartbeatLoop() {
 	}
 }
 
+// decayScoresLoop periodically decays peer reputation scores.
+func (sw *Swarm) decayScoresLoop() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			sw.reputation.DecayScores()
+		case <-sw.stopCh:
+			return
+		}
+	}
+}
+
 // sendHeartbeatViaLibp2p sends a heartbeat to all connected peers via libp2p streams.
 func (sw *Swarm) sendHeartbeatViaLibp2p() {
 	if sw.libp2pHost == nil {
@@ -257,9 +282,14 @@ func (sw *Swarm) ValidatePeers(validateInterval time.Duration) {
 	defer sw.mu.Unlock()
 
 	now := time.Now()
-	for _, p := range sw.peers {
+	staleThreshold := now.Add(-validateInterval * 10)
+	for id, p := range sw.peers {
 		if now.Sub(p.LastSeen) > validateInterval {
 			p.Alive = false
+		}
+		// Delete peers inactive beyond 10× validateInterval
+		if p.LastSeen.Before(staleThreshold) {
+			delete(sw.peers, id)
 		}
 	}
 }

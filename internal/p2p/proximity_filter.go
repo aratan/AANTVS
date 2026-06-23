@@ -30,7 +30,7 @@ func DefaultProximityConfig() ProximityConfig {
 }
 
 // EvaluarValidezPeer verifica si un nodo cumple con los estándares de latencia o inactividad.
-func (s *Swarm) EvaluarValidezPeer(addr string, lastFound time.Time, cfg ProximityConfig) (bool, error) {
+func (s *Swarm) EvaluarValidezPeer(peerID string, addr string, lastFound time.Time, cfg ProximityConfig) (bool, error) {
 	// 1. Verificar Inactividad (Cuantos años lleva apagado?)
 	if time.Since(lastFound) > cfg.PeerIdleTimeout {
 		return false, ErrPeerInactive
@@ -52,7 +52,7 @@ func (s *Swarm) EvaluarValidezPeer(addr string, lastFound time.Time, cfg Proximi
 	// 3. Verificación de Reputación (PR #23 Integration)
 	// ReputationManager usa scores de -100 a 100, con 50 como neutral.
 	// Un peer debe tener score >= 60 (goodThreshold) para ser considerado válido.
-	score := s.reputation.GetScore(addr)
+	score := s.reputation.GetScore(peerID)
 	if score < goodThreshold {
 		return false, ErrLowReputation // Peer con baja reputación descartado por GC
 	}

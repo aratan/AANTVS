@@ -108,6 +108,7 @@ type PeerManager struct {
 	peerID  string
 	ctx     chan struct{} // closed to signal shutdown
 	version string
+	stopOnce sync.Once
 }
 
 const heartbeatInterval = 15 * time.Second
@@ -161,7 +162,11 @@ func (pm *PeerManager) broadcastHeartbeat() {
 
 	for _, p := range peers {
 		if p.Connected && time.Since(p.LastSeen) < heartbeatInterval*2 {
-			HeartbeatChannel <- append([]byte(nil), b...) // copy before sending
+			select {
+			case HeartbeatChannel <- append([]byte(nil), b...): // copy before sending
+			default:
+				log.Printf("p2p: heartbeat channel full, dropping message for %s", p.ID)
+			}
 		}
 	}
 }
@@ -256,5 +261,7 @@ func jitteredDuration(base time.Duration) time.Duration {
 
 // Stop signals all background goroutines to terminate.
 func (pm *PeerManager) Stop() {
-	close(pm.ctx)
+	pm.stopOnce.Do(func() {
+		close(pm.ctx)
+	})
 }

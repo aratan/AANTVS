@@ -184,7 +184,8 @@ func (hp *HolePuncher) sendProbes(
 	if err != nil {
 		return nil, fmt.Errorf("listen UDP: %w", err)
 	}
-	defer conn.Close()
+	// On any error path after this point, close the connection.
+	// On success, the caller owns the connection lifetime.
 
 	remoteAddr := &net.UDPAddr{IP: remoteIP, Port: remotePort}
 
@@ -199,12 +200,14 @@ func (hp *HolePuncher) sendProbes(
 	for {
 		select {
 		case <-ctx.Done():
+			conn.Close()
 			return nil, fmt.Errorf("hole punch timeout")
 		default:
 		}
 
 		n, raddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
+			conn.Close()
 			return nil, fmt.Errorf("no response from %s:%d: %w", remoteIP, remotePort, err)
 		}
 

@@ -50,8 +50,8 @@ func StartP2P() (shutdown func(), swarm *Swarm, err error) {
 	}, swarm, nil
 }
 
-// Allowed extensions for inventory items
-var inventoryExtAllowed = map[string]string{
+// InventoryExtAllowed maps file extensions to MIME types for allowed inventory items.
+var InventoryExtAllowed = map[string]string{
 	".mp4":  "video/mp4",
 	".webm": "video/webm",
 	".ogg":  "video/ogg",
@@ -83,14 +83,14 @@ func buildLocalInventory() []InventoryItem {
 		}
 		name := entry.Name()
 		ext := strings.ToLower(filepath.Ext(name))
-		if _, allowed := inventoryExtAllowed[ext]; !allowed {
+		if _, allowed := InventoryExtAllowed[ext]; !allowed {
 			continue
 		}
 		items = append(items, InventoryItem{
 			Name: name,
 			Path: "/api/" + name,
 			Size: info.Size(),
-			Type: inventoryExtAllowed[ext],
+			Type: InventoryExtAllowed[ext],
 		})
 	}
 	return items

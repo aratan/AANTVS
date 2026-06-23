@@ -91,9 +91,7 @@ func LoadConfigFrom(path string) (Config, error) {
 	if fileCfg.HTTP.Port != 0 {
 		cfg.HTTP.Port = fileCfg.HTTP.Port
 	}
-	if fileCfg.P2P.Enabled {
-		cfg.P2P.Enabled = fileCfg.P2P.Enabled
-	}
+	cfg.P2P.Enabled = fileCfg.P2P.Enabled
 	if fileCfg.P2P.DiscoveryMode != "" {
 		cfg.P2P.DiscoveryMode = fileCfg.P2P.DiscoveryMode
 	}

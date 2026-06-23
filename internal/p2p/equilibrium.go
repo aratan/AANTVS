@@ -101,7 +101,7 @@ func (em *EquilibriumManager) CheckModeTransition() SwarmMode {
 	}
 
 	// Force RarestFirst if peer health is too low
-	if avg := em.AverageHealth(); avg < em.loadedThreshold && avg > 0 {
+	if avg := em.averageHealthUnlocked(); avg < em.loadedThreshold && avg > 0 {
 		if em.state == SequentialFirstMode {
 			em.state = RarestFirstMode
 			log.Printf("p2p: equilibrium → %s (low health: %.2f)", em.state, avg)
@@ -139,7 +139,12 @@ func (em *EquilibriumManager) RemovePeer(peerID string) {
 func (em *EquilibriumManager) AverageHealth() float64 {
 	em.mu.Lock()
 	defer em.mu.Unlock()
+	return em.averageHealthUnlocked()
+}
 
+// averageHealthUnlocked returns the average health score without acquiring the lock.
+// Caller MUST hold em.mu.
+func (em *EquilibriumManager) averageHealthUnlocked() float64 {
 	if len(em.peerHealthScore) == 0 {
 		return 0
 	}
@@ -191,7 +196,7 @@ func (em *EquilibriumManager) GetStats() EquilibriumStats {
 	em.mu.Lock()
 	mode := em.state.String()
 	playbacks := atomic.LoadInt32(&em.activePlaybacks)
-	avg := em.AverageHealth()
+	avg := em.averageHealthUnlocked()
 	peers := len(em.peerHealthScore)
 	next := em.nextSwitchAt.Format(time.RFC3339)
 	em.mu.Unlock()

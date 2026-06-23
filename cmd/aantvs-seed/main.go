@@ -123,7 +123,7 @@ func (srv *seedServer) handlePeer(conn net.Conn) {
 	}
 
 	// Relay loop: forward bytes between this peer and all others
-	srv.relayLoop(conn)
+	srv.relayLoop(conn, peerAddr)
 }
 
 func (srv *seedServer) sendBootstrap(conn net.Conn) error {
@@ -156,14 +156,14 @@ func (srv *seedServer) sendBootstrap(conn net.Conn) error {
 	return nil
 }
 
-func (srv *seedServer) relayLoop(self net.Conn) {
+func (srv *seedServer) relayLoop(self net.Conn, selfAddr string) {
 	// Read from self and forward to all other peers
 	buf := make([]byte, 65536)
 	for {
 		n, err := self.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("seed: read from %s: %v", srv.peers[self], err)
+				log.Printf("seed: read from %s: %v", selfAddr, err)
 			}
 			return
 		}
@@ -172,8 +172,10 @@ func (srv *seedServer) relayLoop(self net.Conn) {
 		srv.mu.Lock()
 		for conn := range srv.peers {
 			if conn != self {
+				// Read addr while holding lock to avoid concurrent map read
+				addr := srv.peers[conn]
 				if _, werr := conn.Write(buf[:n]); werr != nil {
-					log.Printf("seed: write to %s: %v", srv.peers[conn], werr)
+					log.Printf("seed: write to %s: %v", addr, werr)
 					conn.Close()
 					delete(srv.peers, conn)
 				}

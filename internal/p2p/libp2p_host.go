@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -29,9 +31,11 @@ const (
 
 // Libp2pHost wraps a libp2p host with AANTVS-specific discovery and protocols.
 type Libp2pHost struct {
-	host   host.Host
-	cfg    Config
-	stopCh chan struct{}
+	host        host.Host
+	cfg         Config
+	stopCh      chan struct{}
+	mdnsCloser  io.Closer
+	onInventory func(peerID string, items []InventoryItem)
 }
 
 // mDNSNotifee implements mdns.Notifee for peer discovery.
@@ -94,7 +98,7 @@ func NewLibp2pHost(cfg Config) (*Libp2pHost, error) {
 func (l *Libp2pHost) setupMDNS() error {
 	notifee := &mDNSNotifee{host: l.host}
 	mdnsService := mdns.NewMdnsService(l.host, "aantvs", notifee)
-	_ = mdnsService // Service keeps running in background
+	l.mdnsCloser = mdnsService
 
 	log.Println("libp2p: mDNS discovery enabled (service=aantvs)")
 	return nil
@@ -105,8 +109,30 @@ func (l *Libp2pHost) setupProtocols() {
 	// Handle inventory exchange requests
 	l.host.SetStreamHandler(protocol.ID(ProtocolInventory), func(s network.Stream) {
 		defer s.Close()
-		log.Printf("libp2p: inventory stream from %s", s.Conn().RemotePeer())
-		// Inventory handling will be delegated to Swarm
+		remotePeer := s.Conn().RemotePeer()
+		log.Printf("libp2p: inventory stream from %s", remotePeer)
+
+		var pkt P2PPacket
+		if err := json.NewDecoder(s).Decode(&pkt); err != nil {
+			log.Printf("libp2p: inventory decode error: %v", err)
+			return
+		}
+
+		if pkt.Type != PktIndexUpdate {
+			log.Printf("libp2p: inventory stream unexpected type %d", pkt.Type)
+			return
+		}
+
+		var payload IndexPayload
+		if err := json.Unmarshal(pkt.Payload, &payload); err != nil {
+			log.Printf("libp2p: inventory payload decode error: %v", err)
+			return
+		}
+
+		if l.onInventory != nil {
+			l.onInventory(remotePeer.String(), payload.Items)
+		}
+		log.Printf("libp2p: received %d inventory items from %s", len(payload.Items), remotePeer)
 	})
 
 	// Handle heartbeat requests
@@ -140,8 +166,19 @@ func (l *Libp2pHost) setupProtocols() {
 		log.Printf("libp2p: chunk request — file=%s chunk=%d size=%d",
 			req.FileID, req.ChunkIdx, req.ChunkSize)
 
+		// Sanitize file path to prevent traversal
+		cleanID := filepath.Clean(req.FileID)
+		filePath := filepath.Join("api", cleanID)
+		absDir, _ := filepath.Abs("api")
+		absFile, _ := filepath.Abs(filePath)
+		if !strings.HasPrefix(absFile, absDir+string(filepath.Separator)) && absFile != absDir {
+			log.Printf("libp2p: path traversal attempt blocked: %s", req.FileID)
+			resp := ChunkResponse{FileID: req.FileID, Error: "invalid file path"}
+			json.NewEncoder(s).Encode(resp)
+			return
+		}
+
 		// Find and read the file
-		filePath := filepath.Join("api", req.FileID)
 		f, err := os.Open(filePath)
 		if err != nil {
 			log.Printf("libp2p: file not found: %s", req.FileID)
@@ -289,6 +326,18 @@ func (l *Libp2pHost) RequestChunk(ctx context.Context, peerID peer.ID, fileID st
 		return nil, fmt.Errorf("peer error: %s", resp.Error)
 	}
 
+	// Clamp size to prevent OOM from untrusted resp.Size
+	const maxChunkSize = 2 << 20 // 2MB
+	if resp.Size > maxChunkSize {
+		return nil, fmt.Errorf("chunk size %d exceeds maximum %d", resp.Size, maxChunkSize)
+	}
+	if resp.Size <= 0 {
+		return nil, fmt.Errorf("invalid chunk size: %d", resp.Size)
+	}
+
+	// Set read deadline to prevent hanging on ReadFull
+	s.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 	// Read raw chunk data
 	data := make([]byte, resp.Size)
 	if _, err := io.ReadFull(s, data); err != nil {
@@ -301,5 +350,8 @@ func (l *Libp2pHost) RequestChunk(ctx context.Context, peerID peer.ID, fileID st
 // Close shuts down the libp2p host and all associated services.
 func (l *Libp2pHost) Close() error {
 	close(l.stopCh)
+	if l.mdnsCloser != nil {
+		l.mdnsCloser.Close()
+	}
 	return l.host.Close()
 }

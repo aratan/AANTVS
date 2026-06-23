@@ -23,14 +23,8 @@ import (
 	"aantvs/internal/p2p"
 )
 
-// Allowed extensions and their MIME types. Nil means not allowed.
-var extAllowed = map[string]string{
-	".mp4": "video/mp4", ".webm": "video/webm", ".ogg": "video/ogg",
-	".jpg":  "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-	".gif":  "image/gif",  ".webp": "image/webp",
-	".csv":  "text/csv",   ".json": "application/json",  ".txt": "text/plain",
-	".pdf":  "application/pdf",
-}
+// extAllowed delegates to the shared map in the p2p package.
+var extAllowed = p2p.InventoryExtAllowed
 
 // readLimit reads up to maxBytes from r; returns what was read.
 func readLimit(r io.Reader, maxBytes int64) ([]byte, error) {
@@ -336,7 +330,7 @@ func fetchJSON(client *http.Client) error {
 		return fmt.Errorf("fetching JSON: unexpected status %d", res.StatusCode)
 	}
 
-	body, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 10<<20))
 	if err != nil {
 		return fmt.Errorf("reading JSON body: %w", err)
 	}
