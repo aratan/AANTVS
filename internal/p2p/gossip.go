@@ -285,6 +285,11 @@ func (sw *Swarm) GetLibp2pPeerCount() int {
 	return len(sw.libp2pHost.GetPeers())
 }
 
+// Libp2pHost returns the underlying libp2p host for direct protocol access.
+func (sw *Swarm) Libp2pHost() *Libp2pHost {
+	return sw.libp2pHost
+}
+
 // GetReputationStats returns reputation statistics for all tracked peers.
 func (sw *Swarm) GetReputationStats() []PeerReputationStats {
 	return sw.reputation.GetStats()

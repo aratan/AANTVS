@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -124,8 +127,85 @@ func (l *Libp2pHost) setupProtocols() {
 	// Handle video stream requests
 	l.host.SetStreamHandler(protocol.ID(ProtocolStream), func(s network.Stream) {
 		defer s.Close()
-		log.Printf("libp2p: stream request from %s", s.Conn().RemotePeer())
-		// Stream handling will be delegated to Swarm
+		peerID := s.Conn().RemotePeer()
+		log.Printf("libp2p: stream request from %s", peerID)
+
+		// Read chunk request (JSON header, then binary data follows)
+		var req ChunkRequest
+		if err := json.NewDecoder(s).Decode(&req); err != nil {
+			log.Printf("libp2p: stream decode error: %v", err)
+			return
+		}
+
+		log.Printf("libp2p: chunk request — file=%s chunk=%d size=%d",
+			req.FileID, req.ChunkIdx, req.ChunkSize)
+
+		// Find and read the file
+		filePath := filepath.Join("api", req.FileID)
+		f, err := os.Open(filePath)
+		if err != nil {
+			log.Printf("libp2p: file not found: %s", req.FileID)
+			resp := ChunkResponse{FileID: req.FileID, Error: "file not found"}
+			json.NewEncoder(s).Encode(resp)
+			return
+		}
+		defer f.Close()
+
+		// Get file info
+		info, err := f.Stat()
+		if err != nil {
+			resp := ChunkResponse{FileID: req.FileID, Error: "stat error"}
+			json.NewEncoder(s).Encode(resp)
+			return
+		}
+
+		// Calculate chunk offset
+		chunkSize := req.ChunkSize
+		if chunkSize == 0 {
+			chunkSize = 262144 // 256KB default
+		}
+		offset := int64(req.ChunkIdx * chunkSize)
+
+		if offset >= info.Size() {
+			resp := ChunkResponse{FileID: req.FileID, Error: "offset out of range"}
+			json.NewEncoder(s).Encode(resp)
+			return
+		}
+
+		// Seek and read chunk
+		if _, err := f.Seek(offset, io.SeekStart); err != nil {
+			resp := ChunkResponse{FileID: req.FileID, Error: "seek error"}
+			json.NewEncoder(s).Encode(resp)
+			return
+		}
+
+		buf := make([]byte, chunkSize)
+		n, err := io.ReadFull(f, buf)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			resp := ChunkResponse{FileID: req.FileID, Error: "read error"}
+			json.NewEncoder(s).Encode(resp)
+			return
+		}
+
+		// Send response header (JSON), then raw data
+		resp := ChunkResponse{
+			FileID:    req.FileID,
+			ChunkIdx:  req.ChunkIdx,
+			Size:      n,
+			TotalSize: info.Size(),
+		}
+		if err := json.NewEncoder(s).Encode(resp); err != nil {
+			return
+		}
+
+		// Send raw chunk data
+		if _, err := s.Write(buf[:n]); err != nil {
+			log.Printf("libp2p: write chunk error: %v", err)
+			return
+		}
+
+		log.Printf("libp2p: sent chunk %d of %s (%d bytes) to %s",
+			req.ChunkIdx, req.FileID, n, peerID)
 	})
 
 	log.Println("libp2p: protocols registered (inventory, heartbeat, stream)")
@@ -179,6 +259,43 @@ func (l *Libp2pHost) NewStream(ctx context.Context, peerID peer.ID, proto protoc
 // Host returns the underlying libp2p host.
 func (l *Libp2pHost) Host() host.Host {
 	return l.host
+}
+
+// RequestChunk requests a video chunk from a peer.
+func (l *Libp2pHost) RequestChunk(ctx context.Context, peerID peer.ID, fileID string, chunkIdx int, chunkSize int) ([]byte, error) {
+	s, err := l.host.NewStream(ctx, peerID, protocol.ID(ProtocolStream))
+	if err != nil {
+		return nil, fmt.Errorf("open stream: %w", err)
+	}
+	defer s.Close()
+
+	// Send request
+	req := ChunkRequest{
+		FileID:    fileID,
+		ChunkIdx:  chunkIdx,
+		ChunkSize: chunkSize,
+	}
+	if err := json.NewEncoder(s).Encode(req); err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
+	}
+
+	// Read response header
+	var resp ChunkResponse
+	if err := json.NewDecoder(s).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if resp.Error != "" {
+		return nil, fmt.Errorf("peer error: %s", resp.Error)
+	}
+
+	// Read raw chunk data
+	data := make([]byte, resp.Size)
+	if _, err := io.ReadFull(s, data); err != nil {
+		return nil, fmt.Errorf("read chunk data: %w", err)
+	}
+
+	return data, nil
 }
 
 // Close shuts down the libp2p host and all associated services.

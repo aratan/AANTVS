@@ -393,6 +393,30 @@ func hora() int {
 	return i
 }
 
+// findLocalFile finds a file by station index in the api/ directory.
+func findLocalFile(idx int) string {
+	entries, err := os.ReadDir("api")
+	if err != nil {
+		return ""
+	}
+	fileIdx := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if _, allowed := extAllowed[ext]; !allowed {
+			continue
+		}
+		if fileIdx == idx {
+			return filepath.Join("api", name)
+		}
+		fileIdx++
+	}
+	return ""
+}
+
 // --- QoS Handler ---
 
 // QoSMetrics holds P2P network quality metrics.
@@ -608,7 +632,56 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		fileIdx++
 	}
 
-	// Station index not found
+	// Station index not found locally — try to find a peer with the file via p2p
+	if p2pSwarm != nil && p2pSwarm.Libp2pHost() != nil {
+		log.Printf("p2p: station %d not local, trying peers...", req.StationIdx)
+
+		// Build the file name from local inventory scan (reuse existing index)
+		// We need to find which file corresponds to this station index
+		localFile := findLocalFile(req.StationIdx)
+		fileName := ""
+		if localFile != "" {
+			fileName = filepath.Base(localFile)
+		} else {
+			// File not local — try to find it in remote inventory
+			// Scan entries again to get the file name at this index
+			fIdx := 0
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				ext := strings.ToLower(filepath.Ext(name))
+				if _, allowed := extAllowed[ext]; !allowed {
+					continue
+				}
+				fIdx++
+			}
+			// If we still don't have the name, we can't request from peers
+			if fileName == "" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+		}
+
+		peers := p2pSwarm.Libp2pHost().GetPeers()
+		for _, peerID := range peers {
+			log.Printf("p2p: requesting chunk %d of '%s' from peer %s", req.ChunkIdx, fileName, peerID)
+			chunk, err := p2pSwarm.Libp2pHost().RequestChunk(
+				r.Context(), peerID, fileName, req.ChunkIdx, req.Size)
+			if err != nil {
+				log.Printf("p2p: chunk request to %s failed: %v", peerID, err)
+				continue
+			}
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(chunk)))
+			w.Header().Set("X-P2P-Peer", peerID.String())
+			w.Write(chunk)
+			return
+		}
+		log.Printf("p2p: no peer could serve station %d chunk %d", req.StationIdx, req.ChunkIdx)
+	}
+
+	// Station index not found locally or via peers
 	w.WriteHeader(http.StatusNotFound)
 }
 
